@@ -22,7 +22,7 @@ def main():
     # - target_n controls downsampling resolution inside score.py
     # - n_samples controls how many sample points are evaluated
     target_n = 80
-    n_samples = 200
+    n_samples = 20
     margin_m = 0.0
 
     # Optional: score only first K points for a quick test
