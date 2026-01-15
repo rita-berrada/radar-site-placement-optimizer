@@ -13,6 +13,8 @@ from visualize_terrain import load_terrain_npz
 from coverage_analysis import compute_all_coverage_maps
 from visualize_coverage import plot_all_coverage_maps
 from export_kml import export_all_coverage_to_kmz
+from coverage_analysis_fast import compute_all_coverage_maps_fast
+
 
 # Try to import tqdm for progress bars
 try:
@@ -34,9 +36,9 @@ def main():
     terrain_file = 'terrain_mat.npz'
     
     # Radar position
-    radar_lat = 43.6584   # Example: Nice Airport latitude
-    radar_lon = 7.2159    # Example: Nice Airport longitude
-    radar_height_agl_m = 50.0  # Radar height above ground level (meters)
+    radar_lat = 43.664658   # Example: Nice Airport latitude
+    radar_lon = 7.204519    # Example: Nice Airport longitude
+    radar_height_agl_m = 20.0  # Radar height above ground level (meters)
     
     # Flight levels (tender requirement)
     flight_levels = [5, 10, 20, 50, 100, 200, 300, 400]
@@ -73,6 +75,8 @@ def main():
             print(f"Reduced grid: {len(lats)} x {len(lons)} = {len(lats)*len(lons):,} points")
         else:
             lats, lons, Z = lats_full, lons_full, Z_full
+            
+
             
     except FileNotFoundError:
         print(f"Error: Terrain file '{terrain_file}' not found.")
@@ -127,13 +131,14 @@ def main():
     
     # Compute all coverage maps
     try:
-        coverage_maps = compute_all_coverage_maps(
+        coverage_maps = compute_all_coverage_maps_fast(
             radar_lat, radar_lon, radar_height_agl_m,
             flight_levels, lats, lons, Z,
             n_samples=n_samples, margin_m=margin_m,
-            progress_callback=fl_progress_callback
+            batch_size=1024
         )
-        print("Coverage maps computed successfully!")
+        
+
     except Exception as e:
         print(f"Error computing coverage maps: {e}")
         import traceback
