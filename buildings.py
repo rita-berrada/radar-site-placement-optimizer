@@ -201,7 +201,7 @@ plt.scatter([NICE_AIRPORT_LON], [NICE_AIRPORT_LAT],
             linewidth=1.5, label='Nice Airport', zorder=10)
 
 # Buildings points
-plt.scatter(lon_arr, lat_arr, s=6, color='blue', alpha=0.35,
+plt.scatter(lon_arr, lat_arr, s=6, color='yellow', alpha=0.35,
             label=f'Buildings ({len(buildings)})', zorder=9)
 
 # Circles (limited to nearby buildings)
@@ -214,13 +214,13 @@ for i, b in enumerate(buildings_for_circles):
     if i == 0:
         circle = Circle((b['lon'], b['lat']),
                         radius_deg_lon,
-                        fill=False, edgecolor='blue', linestyle='--',
+                        fill=False, edgecolor='yellow', linestyle='--',
                         linewidth=1, alpha=0.25,
                         label='1 km Radius (REQ_buildings)', zorder=8)
     else:
         circle = Circle((b['lon'], b['lat']),
                         radius_deg_lon,
-                        fill=False, edgecolor='blue', linestyle='--',
+                        fill=False, edgecolor='yellow', linestyle='--',
                         linewidth=1, alpha=0.25, zorder=8)
     ax.add_patch(circle)
 
@@ -268,7 +268,7 @@ lats_zoom = lats[lat_mask]
 lons_zoom = lons[lon_mask]
 lon_grid_zoom, lat_grid_zoom = np.meshgrid(lons_zoom, lats_zoom)
 
-plt.figure(figsize=(16, 15))
+plt.figure(figsize=(18, 16))
 
 # Terrain zoom
 contour = plt.contourf(lon_grid_zoom, lat_grid_zoom, Z_zoom, levels=40, cmap='terrain', alpha=0.9)
@@ -283,7 +283,7 @@ plt.scatter([NICE_AIRPORT_LON], [NICE_AIRPORT_LAT],
 # Buildings nearby
 near_lon = np.array([b['lon'] for b in nearby], dtype=float)
 near_lat = np.array([b['lat'] for b in nearby], dtype=float)
-plt.scatter(near_lon, near_lat, s=10, color='blue', alpha=0.45,
+plt.scatter(near_lon, near_lat, s=10, color='yellow', alpha=0.45,
             label=f'Buildings (<10 km) ({len(nearby)})', zorder=9)
 
 # Circles for all nearby buildings (zoom)
@@ -293,13 +293,13 @@ for i, b in enumerate(nearby):
     if i == 0:
         circle = Circle((b['lon'], b['lat']),
                         radius_deg_lon,
-                        fill=False, edgecolor='blue', linestyle='--',
+                        fill=False, edgecolor='yellow', linestyle='--',
                         linewidth=1, alpha=0.25,
                         label='1 km Radius (REQ_buildings)', zorder=8)
     else:
         circle = Circle((b['lon'], b['lat']),
                         radius_deg_lon,
-                        fill=False, edgecolor='blue', linestyle='--',
+                        fill=False, edgecolor='yellow', linestyle='--',
                         linewidth=1, alpha=0.25, zorder=8)
     ax.add_patch(circle)
 
