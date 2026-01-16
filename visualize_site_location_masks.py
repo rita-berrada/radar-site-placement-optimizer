@@ -1,210 +1,136 @@
+#!/usr/bin/env python3
 """
-Site Location Masks Visualization Module
+Visualize authorized radar candidate points in Google Earth (KMZ).
 
-This module provides functions to visualize geographical masks as PNG images.
-Masks are overlaid on terrain maps with:
-- Admissible areas: transparent (showing terrain underneath)
-- Excluded areas: grey with partial opacity (overlaying terrain)
+Input:
+- authorized_points_01deg.npz  (contains array key "points" with shape (N,2): [lat, lon])
+
+Output:
+- authorized_points_01deg.kmz  (open with Google Earth)
 """
 
+from pathlib import Path
+import zipfile
 import numpy as np
-import matplotlib.pyplot as plt
-from typing import Dict, Optional
-from matplotlib.colors import ListedColormap
-from matplotlib import cm
+import xml.etree.ElementTree as ET
 
 
-def plot_masks_overlay(
-    lats: np.ndarray,
-    lons: np.ndarray,
-    Z: np.ndarray,
-    masks_dict: Dict[str, np.ndarray],
-    nice_lat: Optional[float] = None,
-    nice_lon: Optional[float] = None,
-    save_path: Optional[str] = None,
-    excluded_alpha: float = 0.75,
-    excluded_color: str = 'grey'
+def _kml_color(aabbggrr: str) -> str:
+    """
+    KML color format is AABBGGRR (alpha, blue, green, red).
+    Example: "ff0000ff" = opaque red.
+    """
+    if len(aabbggrr) != 8:
+        raise ValueError("KML color must be 8 hex chars in AABBGGRR format, e.g. 'ff0000ff'")
+    return aabbggrr.lower()
+
+
+def export_points_to_kmz(
+    points_latlon: np.ndarray,
+    output_kmz_path: str = "authorized_points_01deg.kmz",
+    doc_name: str = "Authorized candidate points (0.1°)",
+    point_name_prefix: str = "Candidate",
+    point_color: str = "ff00ffff",  # opaque yellow (AABBGGRR)
+    point_scale: float = 0.8,
+    nice_lat: float | None = 43.6584,
+    nice_lon: float | None = 7.2159,
 ) -> None:
     """
-    Visualize geographical masks overlaid on terrain map.
-    
-    Admissible areas are transparent (showing terrain), excluded areas are
-    grey with partial opacity overlaying the terrain.
-    
-    Parameters:
-    -----------
-    lats : np.ndarray
-        1D array of latitude values (degrees)
-    lons : np.ndarray
-        1D array of longitude values (degrees)
-    Z : np.ndarray
-        2D array of terrain elevation (meters above sea level)
-    masks_dict : Dict[str, np.ndarray]
-        Dictionary mapping mask names to boolean arrays
-        All masks must have shape (len(lats), len(lons))
-        True = admissible, False = excluded
-    nice_lat : float, optional
-        Nice airport latitude to mark on maps
-    nice_lon : float, optional
-        Nice airport longitude to mark on maps
-    save_path : str, optional
-        If provided, save figure to this path
-    excluded_alpha : float, optional
-        Opacity for excluded areas overlay (default: 0.6)
-    excluded_color : str, optional
-        Color for excluded areas (default: 'grey')
+    Export candidate points to a KMZ file for Google Earth.
+
+    Args:
+        points_latlon: np.ndarray shape (N,2) with columns [lat, lon]
+        output_kmz_path: output .kmz filename
+        doc_name: document name shown in Google Earth
+        point_name_prefix: label prefix for points
+        point_color: KML color in AABBGGRR
+        point_scale: icon scale
+        nice_lat/nice_lon: optional reference point (Nice Airport). Set to None to disable.
+
+    Returns:
+        None (writes KMZ on disk)
     """
-    n_masks = len(masks_dict)
-    if n_masks == 0:
-        raise ValueError("At least one mask must be provided")
-    
-    # Verify terrain shape
-    if Z.shape != (len(lats), len(lons)):
-        raise ValueError(f"Terrain shape mismatch: Z{Z.shape} vs ({len(lats)}, {len(lons)})")
-    
-    # Determine grid layout
-    if n_masks == 1:
-        n_rows, n_cols = 1, 1
-    elif n_masks == 2:
-        n_rows, n_cols = 1, 2
-    elif n_masks <= 4:
-        n_rows, n_cols = 2, 2
-    elif n_masks <= 6:
-        n_rows, n_cols = 2, 3
-    else:
-        n_rows = int(np.ceil(np.sqrt(n_masks)))
-        n_cols = int(np.ceil(n_masks / n_rows))
-    
-    fig, axes = plt.subplots(n_rows, n_cols, figsize=(6 * n_cols, 5 * n_rows))
-    
-    # Handle single subplot case
-    if n_masks == 1:
-        axes = [axes]
-    else:
-        axes = axes.flatten()
-    
-    # Set extent for all maps
-    extent = [lons.min(), lons.max(), lats.min(), lats.max()]
-    
-    # Create meshgrid for terrain
-    lon_grid, lat_grid = np.meshgrid(lons, lats)
-    
-    for idx, (mask_name, mask) in enumerate(masks_dict.items()):
-        ax = axes[idx]
-        
-        # Verify mask shape
-        if mask.shape != (len(lats), len(lons)):
-            raise ValueError(f"Mask '{mask_name}' has shape {mask.shape}, expected ({len(lats)}, {len(lons)})")
-        
-        # 1. Display terrain as base layer
-        terrain_im = ax.contourf(lon_grid, lat_grid, Z, levels=20, cmap='terrain', 
-                                 extent=extent, alpha=1.0, zorder=1)
-        
-        # 2. Overlay excluded areas (False = excluded) with grey and partial opacity
-        # Create a mask for excluded areas only
-        excluded_mask = ~mask  # Invert: True where excluded
-        
-        # Create RGBA array for overlay
-        overlay = np.zeros((*mask.shape, 4))  # RGBA
-        
-        # Set excluded areas to grey with alpha
-        excluded_color_rgba = plt.cm.colors.to_rgba(excluded_color, alpha=excluded_alpha)
-        overlay[excluded_mask] = excluded_color_rgba
-        
-        # Admissible areas remain transparent (alpha=0)
-        overlay[~excluded_mask] = (0, 0, 0, 0)  # Transparent
-        
-        # Display overlay
-        ax.imshow(overlay, aspect='auto', origin='lower', extent=extent, 
-                 interpolation='nearest', zorder=2)
-        
-        # Mark Nice airport if provided
-        if nice_lat is not None and nice_lon is not None:
-            ax.plot(nice_lon, nice_lat, 'k*', markersize=15, label='Nice Airport', 
-                   zorder=10, markeredgewidth=2, markeredgecolor='white')
-            ax.text(nice_lon, nice_lat, '  Nice Airport', fontsize=10, va='bottom', zorder=10,
-                   bbox=dict(boxstyle='round,pad=0.3', facecolor='white', alpha=0.8))
-        
-        # Calculate and display statistics
-        admissible_pct = np.sum(mask) / mask.size * 100
-        excluded_pct = 100 - admissible_pct
-        stats_text = f'Admissible: {admissible_pct:.1f}%\nExcluded: {excluded_pct:.1f}%'
-        ax.text(0.02, 0.98, stats_text, transform=ax.transAxes,
-               fontsize=10, verticalalignment='top',
-               bbox=dict(boxstyle='round', facecolor='white', alpha=0.9))
-        
-        # Set labels and title
-        ax.set_xlabel('Longitude', fontsize=11)
-        ax.set_ylabel('Latitude', fontsize=11)
-        ax.set_title(mask_name, fontsize=13, fontweight='bold')
-        ax.grid(True, alpha=0.3, linestyle='--', linewidth=0.5)
-        
-        # Add colorbar for terrain
-        if idx == 0:  # Add colorbar only to first subplot
-            cbar = plt.colorbar(terrain_im, ax=ax, pad=0.02)
-            cbar.set_label('Elevation (m)', fontsize=10)
-        
-        # Add legend for first subplot only
-        if idx == 0 and nice_lat is not None and nice_lon is not None:
-            ax.legend(loc='upper right', fontsize=9)
-    
-    # Hide unused subplots
-    for idx in range(n_masks, len(axes)):
-        axes[idx].set_visible(False)
-    
-    plt.suptitle('Geographical Masks for Radar Site Location (Overlay on Terrain)', 
-                fontsize=15, fontweight='bold', y=0.98)
-    plt.tight_layout(rect=[0, 0, 1, 0.96])
-    
-    if save_path:
-        plt.savefig(save_path, dpi=150, bbox_inches='tight')
-        print(f"Saved: {save_path}")
-        plt.close(fig)
-    else:
-        plt.show()
-        plt.close(fig)
+    if points_latlon.ndim != 2 or points_latlon.shape[1] != 2:
+        raise ValueError("points_latlon must be a (N, 2) array with [lat, lon].")
+
+    # Root KML structure
+    kml = ET.Element("kml", xmlns="http://www.opengis.net/kml/2.2")
+    doc = ET.SubElement(kml, "Document")
+    ET.SubElement(doc, "name").text = doc_name
+
+    # Style for candidate points
+    style_id = "candidateStyle"
+    style = ET.SubElement(doc, "Style", id=style_id)
+    icon_style = ET.SubElement(style, "IconStyle")
+    ET.SubElement(icon_style, "color").text = _kml_color(point_color)
+    ET.SubElement(icon_style, "scale").text = str(point_scale)
+    icon = ET.SubElement(icon_style, "Icon")
+    # Simple default icon (Google Earth built-in circle icon)
+    ET.SubElement(icon, "href").text = "http://maps.google.com/mapfiles/kml/shapes/placemark_circle.png"
+
+    # Folder for candidates
+    folder = ET.SubElement(doc, "Folder")
+    ET.SubElement(folder, "name").text = "Authorized candidates"
+
+    # Add each point
+    for idx, (lat, lon) in enumerate(points_latlon, start=1):
+        pm = ET.SubElement(folder, "Placemark")
+        ET.SubElement(pm, "name").text = f"{point_name_prefix} {idx}"
+        ET.SubElement(pm, "styleUrl").text = f"#{style_id}"
+
+        pt = ET.SubElement(pm, "Point")
+        # KML uses lon,lat,alt
+        ET.SubElement(pt, "coordinates").text = f"{float(lon):.6f},{float(lat):.6f},0"
+
+    # Optional: Nice reference point
+    if nice_lat is not None and nice_lon is not None:
+        ref_folder = ET.SubElement(doc, "Folder")
+        ET.SubElement(ref_folder, "name").text = "Reference"
+        pm = ET.SubElement(ref_folder, "Placemark")
+        ET.SubElement(pm, "name").text = "Nice Airport (LFMN)"
+        # Simple different style
+        ref_style_id = "refStyle"
+        ref_style = ET.SubElement(doc, "Style", id=ref_style_id)
+        ref_icon_style = ET.SubElement(ref_style, "IconStyle")
+        ET.SubElement(ref_icon_style, "color").text = _kml_color("ff0000ff")  # opaque red
+        ET.SubElement(ref_icon_style, "scale").text = "1.1"
+        ref_icon = ET.SubElement(ref_icon_style, "Icon")
+        ET.SubElement(ref_icon, "href").text = "http://maps.google.com/mapfiles/kml/shapes/airports.png"
+        ET.SubElement(pm, "styleUrl").text = f"#{ref_style_id}"
+
+        pt = ET.SubElement(pm, "Point")
+        ET.SubElement(pt, "coordinates").text = f"{float(nice_lon):.6f},{float(nice_lat):.6f},0"
+
+    # Write KMZ (zip containing doc.kml)
+    output_kmz_path = str(Path(output_kmz_path))
+    kml_bytes = ET.tostring(kml, encoding="utf-8", xml_declaration=True)
+
+    with zipfile.ZipFile(output_kmz_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("doc.kml", kml_bytes)
+
+    print(f"✓ Exported {len(points_latlon):,} points to {output_kmz_path}")
 
 
-def plot_single_mask_overlay(
-    lats: np.ndarray,
-    lons: np.ndarray,
-    Z: np.ndarray,
-    mask: np.ndarray,
-    mask_name: str = "Mask",
-    nice_lat: Optional[float] = None,
-    nice_lon: Optional[float] = None,
-    save_path: Optional[str] = None,
-    excluded_alpha: float = 0.75,
-    excluded_color: str = 'grey'
-) -> None:
-    """
-    Visualize a single mask overlaid on terrain map.
-    
-    Parameters:
-    -----------
-    lats : np.ndarray
-        1D array of latitude values (degrees)
-    lons : np.ndarray
-        1D array of longitude values (degrees)
-    Z : np.ndarray
-        2D array of terrain elevation (meters above sea level)
-    mask : np.ndarray
-        Boolean array of shape (len(lats), len(lons))
-        True = admissible, False = excluded
-    mask_name : str, optional
-        Name for the mask (default: "Mask")
-    nice_lat : float, optional
-        Nice airport latitude to mark on map
-    nice_lon : float, optional
-        Nice airport longitude to mark on map
-    save_path : str, optional
-        If provided, save figure to this path
-    excluded_alpha : float, optional
-        Opacity for excluded areas overlay (default: 0.6)
-    excluded_color : str, optional
-        Color for excluded areas (default: 'grey')
-    """
-    plot_masks_overlay(
-        lats, lons, Z, {mask_name: mask}, nice_lat, nice_lon, 
-        save_path, excluded_alpha, excluded_color
+def main():
+    # Load points
+    in_npz = "authorized_points_01deg.npz"
+    data = np.load(in_npz)
+    points = data["points"]  # (N,2) [lat, lon]
+
+    # Safety: ensure float + 2 columns
+    points = np.array(points, dtype=float).reshape(-1, 2)
+
+    export_points_to_kmz(
+        points_latlon=points,
+        output_kmz_path="authorized_points_01deg.kmz",
+        doc_name="Authorized radar candidates (rounded 0.1°)",
+        point_name_prefix="Candidate",
+        point_color="ff00ffff",  # yellow
+        point_scale=0.8,
+        nice_lat=43.6584,
+        nice_lon=7.2159,
     )
+
+
+if __name__ == "__main__":
+    main()
