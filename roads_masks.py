@@ -1,10 +1,3 @@
-"""
-Roads Masks Module - ULTRA FAST VERSION
-
-This module implements boolean geographical masks for road infrastructure constraint.
-OPTIMIZED: Only processes major roads (motorways, trunk, primary, secondary roads)
-to dramatically reduce computation time.
-"""
 
 import numpy as np
 import json
@@ -70,7 +63,7 @@ def load_roads_from_geojson(geojson_file: str, major_roads_only: bool = True) ->
 
 def mask_roads_proximity_fast(lats: np.ndarray, lons: np.ndarray,
                                roads: List[List[Tuple[float, float]]],
-                               max_distance_m: float = 2000.0) -> np.ndarray:
+                               max_distance_m: float = 500.0) -> np.ndarray:
     """
     Create a boolean mask for locations within specified distance of any road.
     
@@ -88,7 +81,7 @@ def mask_roads_proximity_fast(lats: np.ndarray, lons: np.ndarray,
     roads : List[List[Tuple[float, float]]]
         List of roads, each road is list of (lon, lat) tuples
     max_distance_m : float, optional
-        Maximum distance in meters (default: 2000.0 for major roads)
+        Maximum distance in meters (default: 500.0 for major roads)
     
     Returns:
     --------
@@ -184,7 +177,7 @@ def mask_roads_proximity_fast(lats: np.ndarray, lons: np.ndarray,
 
 def mask_roads_from_geojson(lats: np.ndarray, lons: np.ndarray,
                             geojson_file: str = 'roads_nice_50km.geojson',
-                            max_distance_m: float = 2000.0,
+                            max_distance_m: float = 500.0,
                             major_roads_only: bool = True) -> np.ndarray:
     """
     Create road proximity mask directly from GeoJSON file.
@@ -200,7 +193,7 @@ def mask_roads_from_geojson(lats: np.ndarray, lons: np.ndarray,
     geojson_file : str, optional
         Path to GeoJSON file (default: 'roads_nice_50km.geojson')
     max_distance_m : float, optional
-        Maximum distance in meters (default: 2000.0)
+        Maximum distance in meters (default: 500.0)
     major_roads_only : bool, optional
         If True, only use major roads (MUCH faster) (default: True)
     
