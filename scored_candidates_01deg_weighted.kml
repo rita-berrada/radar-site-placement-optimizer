@@ -1,0 +1,621 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+<Document>
+<name>Weighted scored candidates</name>
+
+    <Style id="topStyle">
+      <IconStyle>
+        <scale>1.1</scale>
+        <Icon>
+          <href>http://maps.google.com/mapfiles/kml/paddle/red-circle.png</href>
+        </Icon>
+      </IconStyle>
+      <LabelStyle><scale>0.8</scale></LabelStyle>
+    </Style>
+
+    <Style id="defaultStyle">
+      <IconStyle>
+        <scale>0.6</scale>
+        <Icon>
+          <href>http://maps.google.com/mapfiles/kml/paddle/blu-circle.png</href>
+        </Icon>
+      </IconStyle>
+      <LabelStyle><scale>0.0</scale></LabelStyle>
+    </Style>
+    
+<Folder>
+<name>Candidate sites (weighted)</name>
+<description>Exported 59 / 59 points (top_k=5000).</description>
+<Placemark>
+<name>Rank 1 — 65.8461</name>
+<styleUrl>#topStyle</styleUrl>
+<description><![CDATA[
+<b>Rank</b>: 1<br><b>Weighted score</b>: 65.846094<br><b>Latitude</b>: 43.400000<br><b>Longitude</b>: 6.900000<br><b>Coverage</b>: FL5: 48.1%, FL10: 52.3%, FL20: 58.4%, FL50: 75.9%, FL100: 98.3%, FL200: 98.5%, FL300: 98.5%, FL400: 98.5%
+]]></description>
+<Point>
+<coordinates>6.900000,43.400000,0</coordinates>
+</Point>
+</Placemark>
+<Placemark>
+<name>Rank 2 — 65.4131</name>
+<styleUrl>#topStyle</styleUrl>
+<description><![CDATA[
+<b>Rank</b>: 2<br><b>Weighted score</b>: 65.413125<br><b>Latitude</b>: 43.500000<br><b>Longitude</b>: 7.100000<br><b>Coverage</b>: FL5: 47.4%, FL10: 51.7%, FL20: 58.7%, FL50: 75.6%, FL100: 96.8%, FL200: 98.5%, FL300: 98.5%, FL400: 98.5%
+]]></description>
+<Point>
+<coordinates>7.100000,43.500000,0</coordinates>
+</Point>
+</Placemark>
+<Placemark>
+<name>Rank 3 — 65.3114</name>
+<styleUrl>#topStyle</styleUrl>
+<description><![CDATA[
+<b>Rank</b>: 3<br><b>Weighted score</b>: 65.311406<br><b>Latitude</b>: 43.700000<br><b>Longitude</b>: 6.900000<br><b>Coverage</b>: FL5: 48.4%, FL10: 53.6%, FL20: 56.9%, FL50: 71.1%, FL100: 97.7%, FL200: 97.7%, FL300: 97.7%, FL400: 97.7%
+]]></description>
+<Point>
+<coordinates>6.900000,43.700000,0</coordinates>
+</Point>
+</Placemark>
+<Placemark>
+<name>Rank 4 — 63.0614</name>
+<styleUrl>#topStyle</styleUrl>
+<description><![CDATA[
+<b>Rank</b>: 4<br><b>Weighted score</b>: 63.061406<br><b>Latitude</b>: 43.500000<br><b>Longitude</b>: 7.000000<br><b>Coverage</b>: FL5: 45.2%, FL10: 48.2%, FL20: 54.2%, FL50: 74.0%, FL100: 95.4%, FL200: 98.4%, FL300: 98.4%, FL400: 98.4%
+]]></description>
+<Point>
+<coordinates>7.000000,43.500000,0</coordinates>
+</Point>
+</Placemark>
+<Placemark>
+<name>Rank 5 — 62.0952</name>
+<styleUrl>#topStyle</styleUrl>
+<description><![CDATA[
+<b>Rank</b>: 5<br><b>Weighted score</b>: 62.095156<br><b>Latitude</b>: 43.700000<br><b>Longitude</b>: 7.400000<br><b>Coverage</b>: FL5: 45.5%, FL10: 49.6%, FL20: 57.4%, FL50: 65.4%, FL100: 83.2%, FL200: 98.4%, FL300: 98.4%, FL400: 98.4%
+]]></description>
+<Point>
+<coordinates>7.400000,43.700000,0</coordinates>
+</Point>
+</Placemark>
+<Placemark>
+<name>Rank 6 — 62.0377</name>
+<styleUrl>#topStyle</styleUrl>
+<description><![CDATA[
+<b>Rank</b>: 6<br><b>Weighted score</b>: 62.037656<br><b>Latitude</b>: 43.700000<br><b>Longitude</b>: 7.300000<br><b>Coverage</b>: FL5: 43.9%, FL10: 49.5%, FL20: 57.1%, FL50: 66.2%, FL100: 88.9%, FL200: 97.5%, FL300: 98.4%, FL400: 98.4%
+]]></description>
+<Point>
+<coordinates>7.300000,43.700000,0</coordinates>
+</Point>
+</Placemark>
+<Placemark>
+<name>Rank 7 — 60.7489</name>
+<styleUrl>#topStyle</styleUrl>
+<description><![CDATA[
+<b>Rank</b>: 7<br><b>Weighted score</b>: 60.748906<br><b>Latitude</b>: 43.500000<br><b>Longitude</b>: 6.900000<br><b>Coverage</b>: FL5: 39.1%, FL10: 45.4%, FL20: 54.1%, FL50: 73.8%, FL100: 97.0%, FL200: 98.0%, FL300: 98.0%, FL400: 98.0%
+]]></description>
+<Point>
+<coordinates>6.900000,43.500000,0</coordinates>
+</Point>
+</Placemark>
+<Placemark>
+<name>Rank 8 — 60.5508</name>
+<styleUrl>#topStyle</styleUrl>
+<description><![CDATA[
+<b>Rank</b>: 8<br><b>Weighted score</b>: 60.550781<br><b>Latitude</b>: 43.600000<br><b>Longitude</b>: 7.100000<br><b>Coverage</b>: FL5: 42.3%, FL10: 45.2%, FL20: 50.4%, FL50: 71.8%, FL100: 92.0%, FL200: 98.2%, FL300: 98.2%, FL400: 98.2%
+]]></description>
+<Point>
+<coordinates>7.100000,43.600000,0</coordinates>
+</Point>
+</Placemark>
+<Placemark>
+<name>Rank 9 — 59.8811</name>
+<styleUrl>#topStyle</styleUrl>
+<description><![CDATA[
+<b>Rank</b>: 9<br><b>Weighted score</b>: 59.881094<br><b>Latitude</b>: 43.400000<br><b>Longitude</b>: 6.800000<br><b>Coverage</b>: FL5: 40.3%, FL10: 43.5%, FL20: 50.5%, FL50: 71.9%, FL100: 97.2%, FL200: 97.4%, FL300: 97.4%, FL400: 97.4%
+]]></description>
+<Point>
+<coordinates>6.800000,43.400000,0</coordinates>
+</Point>
+</Placemark>
+<Placemark>
+<name>Rank 10 — 59.3744</name>
+<styleUrl>#topStyle</styleUrl>
+<description><![CDATA[
+<b>Rank</b>: 10<br><b>Weighted score</b>: 59.374375<br><b>Latitude</b>: 44.100000<br><b>Longitude</b>: 7.200000<br><b>Coverage</b>: FL5: 42.5%, FL10: 45.7%, FL20: 52.1%, FL50: 75.2%, FL100: 85.5%, FL200: 90.0%, FL300: 90.2%, FL400: 90.2%
+]]></description>
+<Point>
+<coordinates>7.200000,44.100000,0</coordinates>
+</Point>
+</Placemark>
+<Placemark>
+<name>Rank 11 — 59.2306</name>
+<styleUrl>#defaultStyle</styleUrl>
+<description><![CDATA[
+<b>Rank</b>: 11<br><b>Weighted score</b>: 59.230625<br><b>Latitude</b>: 43.700000<br><b>Longitude</b>: 7.100000<br><b>Coverage</b>: FL5: 41.7%, FL10: 46.7%, FL20: 53.3%, FL50: 65.6%, FL100: 81.1%, FL200: 93.5%, FL300: 98.0%, FL400: 98.0%
+]]></description>
+<Point>
+<coordinates>7.100000,43.700000,0</coordinates>
+</Point>
+</Placemark>
+<Placemark>
+<name>Rank 12 — 56.4569</name>
+<styleUrl>#defaultStyle</styleUrl>
+<description><![CDATA[
+<b>Rank</b>: 12<br><b>Weighted score</b>: 56.456875<br><b>Latitude</b>: 43.600000<br><b>Longitude</b>: 6.600000<br><b>Coverage</b>: FL5: 33.5%, FL10: 46.0%, FL20: 55.0%, FL50: 61.5%, FL100: 78.7%, FL200: 96.4%, FL300: 97.6%, FL400: 97.6%
+]]></description>
+<Point>
+<coordinates>6.600000,43.600000,0</coordinates>
+</Point>
+</Placemark>
+<Placemark>
+<name>Rank 13 — 56.1805</name>
+<styleUrl>#defaultStyle</styleUrl>
+<description><![CDATA[
+<b>Rank</b>: 13<br><b>Weighted score</b>: 56.180469<br><b>Latitude</b>: 43.900000<br><b>Longitude</b>: 7.300000<br><b>Coverage</b>: FL5: 34.1%, FL10: 38.2%, FL20: 45.8%, FL50: 74.8%, FL100: 92.4%, FL200: 97.0%, FL300: 97.7%, FL400: 97.7%
+]]></description>
+<Point>
+<coordinates>7.300000,43.900000,0</coordinates>
+</Point>
+</Placemark>
+<Placemark>
+<name>Rank 14 — 55.4583</name>
+<styleUrl>#defaultStyle</styleUrl>
+<description><![CDATA[
+<b>Rank</b>: 14<br><b>Weighted score</b>: 55.458281<br><b>Latitude</b>: 43.700000<br><b>Longitude</b>: 6.700000<br><b>Coverage</b>: FL5: 38.9%, FL10: 44.0%, FL20: 46.8%, FL50: 54.2%, FL100: 77.3%, FL200: 94.1%, FL300: 97.8%, FL400: 97.8%
+]]></description>
+<Point>
+<coordinates>6.700000,43.700000,0</coordinates>
+</Point>
+</Placemark>
+<Placemark>
+<name>Rank 15 — 53.5594</name>
+<styleUrl>#defaultStyle</styleUrl>
+<description><![CDATA[
+<b>Rank</b>: 15<br><b>Weighted score</b>: 53.559375<br><b>Latitude</b>: 43.600000<br><b>Longitude</b>: 7.000000<br><b>Coverage</b>: FL5: 24.3%, FL10: 37.3%, FL20: 52.1%, FL50: 71.4%, FL100: 89.6%, FL200: 98.1%, FL300: 98.1%, FL400: 98.1%
+]]></description>
+<Point>
+<coordinates>7.000000,43.600000,0</coordinates>
+</Point>
+</Placemark>
+<Placemark>
+<name>Rank 16 — 51.0736</name>
+<styleUrl>#defaultStyle</styleUrl>
+<description><![CDATA[
+<b>Rank</b>: 16<br><b>Weighted score</b>: 51.073594<br><b>Latitude</b>: 43.500000<br><b>Longitude</b>: 6.800000<br><b>Coverage</b>: FL5: 25.1%, FL10: 31.0%, FL20: 43.0%, FL50: 67.4%, FL100: 96.0%, FL200: 96.9%, FL300: 96.9%, FL400: 96.9%
+]]></description>
+<Point>
+<coordinates>6.800000,43.500000,0</coordinates>
+</Point>
+</Placemark>
+<Placemark>
+<name>Rank 17 — 48.9042</name>
+<styleUrl>#defaultStyle</styleUrl>
+<description><![CDATA[
+<b>Rank</b>: 17<br><b>Weighted score</b>: 48.904219<br><b>Latitude</b>: 43.700000<br><b>Longitude</b>: 7.200000<br><b>Coverage</b>: FL5: 26.0%, FL10: 28.9%, FL20: 37.5%, FL50: 60.5%, FL100: 86.7%, FL200: 98.3%, FL300: 98.3%, FL400: 98.3%
+]]></description>
+<Point>
+<coordinates>7.200000,43.700000,0</coordinates>
+</Point>
+</Placemark>
+<Placemark>
+<name>Rank 18 — 48.6762</name>
+<styleUrl>#defaultStyle</styleUrl>
+<description><![CDATA[
+<b>Rank</b>: 18<br><b>Weighted score</b>: 48.676250<br><b>Latitude</b>: 44.000000<br><b>Longitude</b>: 7.200000<br><b>Coverage</b>: FL5: 26.5%, FL10: 29.7%, FL20: 36.0%, FL50: 65.4%, FL100: 86.2%, FL200: 91.6%, FL300: 94.8%, FL400: 96.3%
+]]></description>
+<Point>
+<coordinates>7.200000,44.000000,0</coordinates>
+</Point>
+</Placemark>
+<Placemark>
+<name>Rank 19 — 48.5745</name>
+<styleUrl>#defaultStyle</styleUrl>
+<description><![CDATA[
+<b>Rank</b>: 19<br><b>Weighted score</b>: 48.574531<br><b>Latitude</b>: 44.100000<br><b>Longitude</b>: 7.400000<br><b>Coverage</b>: FL5: 29.9%, FL10: 31.7%, FL20: 35.9%, FL50: 58.6%, FL100: 82.1%, FL200: 90.0%, FL300: 91.6%, FL400: 91.6%
+]]></description>
+<Point>
+<coordinates>7.400000,44.100000,0</coordinates>
+</Point>
+</Placemark>
+<Placemark>
+<name>Rank 20 — 48.5353</name>
+<styleUrl>#defaultStyle</styleUrl>
+<description><![CDATA[
+<b>Rank</b>: 20<br><b>Weighted score</b>: 48.535313<br><b>Latitude</b>: 43.800000<br><b>Longitude</b>: 7.400000<br><b>Coverage</b>: FL5: 26.2%, FL10: 32.3%, FL20: 36.0%, FL50: 54.8%, FL100: 83.3%, FL200: 98.1%, FL300: 98.1%, FL400: 98.1%
+]]></description>
+<Point>
+<coordinates>7.400000,43.800000,0</coordinates>
+</Point>
+</Placemark>
+<Placemark>
+<name>Rank 21 — 47.7555</name>
+<styleUrl>#defaultStyle</styleUrl>
+<description><![CDATA[
+<b>Rank</b>: 21<br><b>Weighted score</b>: 47.755469<br><b>Latitude</b>: 44.100000<br><b>Longitude</b>: 7.300000<br><b>Coverage</b>: FL5: 28.3%, FL10: 31.0%, FL20: 35.7%, FL50: 59.0%, FL100: 76.3%, FL200: 92.5%, FL300: 92.5%, FL400: 92.5%
+]]></description>
+<Point>
+<coordinates>7.300000,44.100000,0</coordinates>
+</Point>
+</Placemark>
+<Placemark>
+<name>Rank 22 — 46.1930</name>
+<styleUrl>#defaultStyle</styleUrl>
+<description><![CDATA[
+<b>Rank</b>: 22<br><b>Weighted score</b>: 46.192969<br><b>Latitude</b>: 43.800000<br><b>Longitude</b>: 7.500000<br><b>Coverage</b>: FL5: 35.0%, FL10: 35.8%, FL20: 37.1%, FL50: 41.2%, FL100: 50.0%, FL200: 77.0%, FL300: 90.9%, FL400: 98.4%
+]]></description>
+<Point>
+<coordinates>7.500000,43.800000,0</coordinates>
+</Point>
+</Placemark>
+<Placemark>
+<name>Rank 23 — 44.2614</name>
+<styleUrl>#defaultStyle</styleUrl>
+<description><![CDATA[
+<b>Rank</b>: 23<br><b>Weighted score</b>: 44.261406<br><b>Latitude</b>: 43.800000<br><b>Longitude</b>: 7.100000<br><b>Coverage</b>: FL5: 22.1%, FL10: 23.1%, FL20: 25.8%, FL50: 54.3%, FL100: 88.5%, FL200: 97.7%, FL300: 97.8%, FL400: 97.8%
+]]></description>
+<Point>
+<coordinates>7.100000,43.800000,0</coordinates>
+</Point>
+</Placemark>
+<Placemark>
+<name>Rank 24 — 44.0945</name>
+<styleUrl>#defaultStyle</styleUrl>
+<description><![CDATA[
+<b>Rank</b>: 24<br><b>Weighted score</b>: 44.094531<br><b>Latitude</b>: 43.900000<br><b>Longitude</b>: 7.100000<br><b>Coverage</b>: FL5: 20.5%, FL10: 23.5%, FL20: 30.6%, FL50: 51.3%, FL100: 86.6%, FL200: 97.6%, FL300: 97.6%, FL400: 97.6%
+]]></description>
+<Point>
+<coordinates>7.100000,43.900000,0</coordinates>
+</Point>
+</Placemark>
+<Placemark>
+<name>Rank 25 — 43.8052</name>
+<styleUrl>#defaultStyle</styleUrl>
+<description><![CDATA[
+<b>Rank</b>: 25<br><b>Weighted score</b>: 43.805156<br><b>Latitude</b>: 44.000000<br><b>Longitude</b>: 7.100000<br><b>Coverage</b>: FL5: 21.3%, FL10: 24.6%, FL20: 30.5%, FL50: 53.6%, FL100: 78.8%, FL200: 94.6%, FL300: 96.6%, FL400: 96.6%
+]]></description>
+<Point>
+<coordinates>7.100000,44.000000,0</coordinates>
+</Point>
+</Placemark>
+<Placemark>
+<name>Rank 26 — 41.3266</name>
+<styleUrl>#defaultStyle</styleUrl>
+<description><![CDATA[
+<b>Rank</b>: 26<br><b>Weighted score</b>: 41.326562<br><b>Latitude</b>: 43.600000<br><b>Longitude</b>: 6.800000<br><b>Coverage</b>: FL5: 8.1%, FL10: 18.9%, FL20: 37.1%, FL50: 63.3%, FL100: 82.5%, FL200: 97.8%, FL300: 97.8%, FL400: 97.8%
+]]></description>
+<Point>
+<coordinates>6.800000,43.600000,0</coordinates>
+</Point>
+</Placemark>
+<Placemark>
+<name>Rank 27 — 41.0961</name>
+<styleUrl>#defaultStyle</styleUrl>
+<description><![CDATA[
+<b>Rank</b>: 27<br><b>Weighted score</b>: 41.096094<br><b>Latitude</b>: 43.400000<br><b>Longitude</b>: 6.700000<br><b>Coverage</b>: FL5: 26.5%, FL10: 28.9%, FL20: 35.3%, FL50: 46.5%, FL100: 69.4%, FL200: 69.7%, FL300: 69.7%, FL400: 69.7%
+]]></description>
+<Point>
+<coordinates>6.700000,43.400000,0</coordinates>
+</Point>
+</Placemark>
+<Placemark>
+<name>Rank 28 — 40.2055</name>
+<styleUrl>#defaultStyle</styleUrl>
+<description><![CDATA[
+<b>Rank</b>: 28<br><b>Weighted score</b>: 40.205469<br><b>Latitude</b>: 43.600000<br><b>Longitude</b>: 6.900000<br><b>Coverage</b>: FL5: 14.1%, FL10: 18.1%, FL20: 29.1%, FL50: 52.4%, FL100: 77.2%, FL200: 97.5%, FL300: 97.5%, FL400: 97.5%
+]]></description>
+<Point>
+<coordinates>6.900000,43.600000,0</coordinates>
+</Point>
+</Placemark>
+<Placemark>
+<name>Rank 29 — 38.6188</name>
+<styleUrl>#defaultStyle</styleUrl>
+<description><![CDATA[
+<b>Rank</b>: 29<br><b>Weighted score</b>: 38.618750<br><b>Latitude</b>: 43.500000<br><b>Longitude</b>: 6.700000<br><b>Coverage</b>: FL5: 12.5%, FL10: 17.1%, FL20: 23.3%, FL50: 47.7%, FL100: 83.5%, FL200: 97.1%, FL300: 97.1%, FL400: 97.1%
+]]></description>
+<Point>
+<coordinates>6.700000,43.500000,0</coordinates>
+</Point>
+</Placemark>
+<Placemark>
+<name>Rank 30 — 38.1889</name>
+<styleUrl>#defaultStyle</styleUrl>
+<description><![CDATA[
+<b>Rank</b>: 30<br><b>Weighted score</b>: 38.188906<br><b>Latitude</b>: 43.500000<br><b>Longitude</b>: 6.600000<br><b>Coverage</b>: FL5: 14.1%, FL10: 19.2%, FL20: 27.1%, FL50: 47.4%, FL100: 67.3%, FL200: 90.4%, FL300: 96.1%, FL400: 96.1%
+]]></description>
+<Point>
+<coordinates>6.600000,43.500000,0</coordinates>
+</Point>
+</Placemark>
+<Placemark>
+<name>Rank 31 — 37.6081</name>
+<styleUrl>#defaultStyle</styleUrl>
+<description><![CDATA[
+<b>Rank</b>: 31<br><b>Weighted score</b>: 37.608125<br><b>Latitude</b>: 43.700000<br><b>Longitude</b>: 6.800000<br><b>Coverage</b>: FL5: 15.8%, FL10: 21.4%, FL20: 31.5%, FL50: 45.9%, FL100: 54.4%, FL200: 75.4%, FL300: 95.2%, FL400: 97.9%
+]]></description>
+<Point>
+<coordinates>6.800000,43.700000,0</coordinates>
+</Point>
+</Placemark>
+<Placemark>
+<name>Rank 32 — 36.7800</name>
+<styleUrl>#defaultStyle</styleUrl>
+<description><![CDATA[
+<b>Rank</b>: 32<br><b>Weighted score</b>: 36.780000<br><b>Latitude</b>: 43.800000<br><b>Longitude</b>: 7.300000<br><b>Coverage</b>: FL5: 12.7%, FL10: 14.8%, FL20: 20.2%, FL50: 37.8%, FL100: 82.5%, FL200: 96.9%, FL300: 98.2%, FL400: 98.2%
+]]></description>
+<Point>
+<coordinates>7.300000,43.800000,0</coordinates>
+</Point>
+</Placemark>
+<Placemark>
+<name>Rank 33 — 36.3895</name>
+<styleUrl>#defaultStyle</styleUrl>
+<description><![CDATA[
+<b>Rank</b>: 33<br><b>Weighted score</b>: 36.389531<br><b>Latitude</b>: 43.800000<br><b>Longitude</b>: 7.000000<br><b>Coverage</b>: FL5: 13.7%, FL10: 16.1%, FL20: 22.6%, FL50: 49.5%, FL100: 67.4%, FL200: 84.9%, FL300: 91.2%, FL400: 96.5%
+]]></description>
+<Point>
+<coordinates>7.000000,43.800000,0</coordinates>
+</Point>
+</Placemark>
+<Placemark>
+<name>Rank 34 — 35.0913</name>
+<styleUrl>#defaultStyle</styleUrl>
+<description><![CDATA[
+<b>Rank</b>: 34<br><b>Weighted score</b>: 35.091250<br><b>Latitude</b>: 43.600000<br><b>Longitude</b>: 6.700000<br><b>Coverage</b>: FL5: 4.1%, FL10: 8.3%, FL20: 20.9%, FL50: 61.7%, FL100: 78.1%, FL200: 97.9%, FL300: 97.9%, FL400: 97.9%
+]]></description>
+<Point>
+<coordinates>6.700000,43.600000,0</coordinates>
+</Point>
+</Placemark>
+<Placemark>
+<name>Rank 35 — 29.2058</name>
+<styleUrl>#defaultStyle</styleUrl>
+<description><![CDATA[
+<b>Rank</b>: 35<br><b>Weighted score</b>: 29.205781<br><b>Latitude</b>: 43.800000<br><b>Longitude</b>: 6.900000<br><b>Coverage</b>: FL5: 5.4%, FL10: 6.2%, FL20: 11.6%, FL50: 30.8%, FL100: 66.8%, FL200: 92.1%, FL300: 97.0%, FL400: 97.6%
+]]></description>
+<Point>
+<coordinates>6.900000,43.800000,0</coordinates>
+</Point>
+</Placemark>
+<Placemark>
+<name>Rank 36 — 29.0847</name>
+<styleUrl>#defaultStyle</styleUrl>
+<description><![CDATA[
+<b>Rank</b>: 36<br><b>Weighted score</b>: 29.084688<br><b>Latitude</b>: 44.000000<br><b>Longitude</b>: 6.700000<br><b>Coverage</b>: FL5: 1.2%, FL10: 2.0%, FL20: 4.6%, FL50: 43.7%, FL100: 87.5%, FL200: 95.4%, FL300: 95.9%, FL400: 95.9%
+]]></description>
+<Point>
+<coordinates>6.700000,44.000000,0</coordinates>
+</Point>
+</Placemark>
+<Placemark>
+<name>Rank 37 — 29.0791</name>
+<styleUrl>#defaultStyle</styleUrl>
+<description><![CDATA[
+<b>Rank</b>: 37<br><b>Weighted score</b>: 29.079062<br><b>Latitude</b>: 43.900000<br><b>Longitude</b>: 7.400000<br><b>Coverage</b>: FL5: 5.8%, FL10: 8.3%, FL20: 12.8%, FL50: 30.7%, FL100: 58.9%, FL200: 89.8%, FL300: 96.2%, FL400: 97.5%
+]]></description>
+<Point>
+<coordinates>7.400000,43.900000,0</coordinates>
+</Point>
+</Placemark>
+<Placemark>
+<name>Rank 38 — 28.9695</name>
+<styleUrl>#defaultStyle</styleUrl>
+<description><![CDATA[
+<b>Rank</b>: 38<br><b>Weighted score</b>: 28.969531<br><b>Latitude</b>: 43.800000<br><b>Longitude</b>: 6.700000<br><b>Coverage</b>: FL5: 0.6%, FL10: 1.4%, FL20: 4.9%, FL50: 40.8%, FL100: 88.9%, FL200: 97.7%, FL300: 97.7%, FL400: 97.7%
+]]></description>
+<Point>
+<coordinates>6.700000,43.800000,0</coordinates>
+</Point>
+</Placemark>
+<Placemark>
+<name>Rank 39 — 28.6652</name>
+<styleUrl>#defaultStyle</styleUrl>
+<description><![CDATA[
+<b>Rank</b>: 39<br><b>Weighted score</b>: 28.665156<br><b>Latitude</b>: 44.000000<br><b>Longitude</b>: 6.900000<br><b>Coverage</b>: FL5: 3.2%, FL10: 4.6%, FL20: 8.5%, FL50: 34.7%, FL100: 73.1%, FL200: 93.9%, FL300: 96.1%, FL400: 96.2%
+]]></description>
+<Point>
+<coordinates>6.900000,44.000000,0</coordinates>
+</Point>
+</Placemark>
+<Placemark>
+<name>Rank 40 — 27.4802</name>
+<styleUrl>#defaultStyle</styleUrl>
+<description><![CDATA[
+<b>Rank</b>: 40<br><b>Weighted score</b>: 27.480156<br><b>Latitude</b>: 43.900000<br><b>Longitude</b>: 7.000000<br><b>Coverage</b>: FL5: 3.3%, FL10: 4.6%, FL20: 8.2%, FL50: 28.1%, FL100: 65.3%, FL200: 93.7%, FL300: 97.4%, FL400: 97.4%
+]]></description>
+<Point>
+<coordinates>7.000000,43.900000,0</coordinates>
+</Point>
+</Placemark>
+<Placemark>
+<name>Rank 41 — 26.7555</name>
+<styleUrl>#defaultStyle</styleUrl>
+<description><![CDATA[
+<b>Rank</b>: 41<br><b>Weighted score</b>: 26.755469<br><b>Latitude</b>: 44.000000<br><b>Longitude</b>: 7.400000<br><b>Coverage</b>: FL5: 7.7%, FL10: 8.6%, FL20: 10.9%, FL50: 25.2%, FL100: 45.8%, FL200: 78.0%, FL300: 92.8%, FL400: 96.0%
+]]></description>
+<Point>
+<coordinates>7.400000,44.000000,0</coordinates>
+</Point>
+</Placemark>
+<Placemark>
+<name>Rank 42 — 26.3739</name>
+<styleUrl>#defaultStyle</styleUrl>
+<description><![CDATA[
+<b>Rank</b>: 42<br><b>Weighted score</b>: 26.373906<br><b>Latitude</b>: 43.800000<br><b>Longitude</b>: 6.800000<br><b>Coverage</b>: FL5: 0.1%, FL10: 0.3%, FL20: 4.0%, FL50: 32.3%, FL100: 74.9%, FL200: 95.9%, FL300: 97.6%, FL400: 97.6%
+]]></description>
+<Point>
+<coordinates>6.800000,43.800000,0</coordinates>
+</Point>
+</Placemark>
+<Placemark>
+<name>Rank 43 — 25.7347</name>
+<styleUrl>#defaultStyle</styleUrl>
+<description><![CDATA[
+<b>Rank</b>: 43<br><b>Weighted score</b>: 25.734687<br><b>Latitude</b>: 43.700000<br><b>Longitude</b>: 6.600000<br><b>Coverage</b>: FL5: 4.0%, FL10: 4.7%, FL20: 7.5%, FL50: 24.3%, FL100: 52.8%, FL200: 86.5%, FL300: 97.8%, FL400: 97.8%
+]]></description>
+<Point>
+<coordinates>6.600000,43.700000,0</coordinates>
+</Point>
+</Placemark>
+<Placemark>
+<name>Rank 44 — 25.6541</name>
+<styleUrl>#defaultStyle</styleUrl>
+<description><![CDATA[
+<b>Rank</b>: 44<br><b>Weighted score</b>: 25.654063<br><b>Latitude</b>: 43.900000<br><b>Longitude</b>: 7.500000<br><b>Coverage</b>: FL5: 4.2%, FL10: 5.4%, FL20: 7.5%, FL50: 16.7%, FL100: 54.1%, FL200: 92.1%, FL300: 97.4%, FL400: 97.7%
+]]></description>
+<Point>
+<coordinates>7.500000,43.900000,0</coordinates>
+</Point>
+</Placemark>
+<Placemark>
+<name>Rank 45 — 24.8900</name>
+<styleUrl>#defaultStyle</styleUrl>
+<description><![CDATA[
+<b>Rank</b>: 45<br><b>Weighted score</b>: 24.890000<br><b>Latitude</b>: 43.900000<br><b>Longitude</b>: 6.800000<br><b>Coverage</b>: FL5: 0.1%, FL10: 0.1%, FL20: 1.6%, FL50: 18.1%, FL100: 78.5%, FL200: 97.0%, FL300: 97.1%, FL400: 97.1%
+]]></description>
+<Point>
+<coordinates>6.800000,43.900000,0</coordinates>
+</Point>
+</Placemark>
+<Placemark>
+<name>Rank 46 — 24.3488</name>
+<styleUrl>#defaultStyle</styleUrl>
+<description><![CDATA[
+<b>Rank</b>: 46<br><b>Weighted score</b>: 24.348750<br><b>Latitude</b>: 43.700000<br><b>Longitude</b>: 7.000000<br><b>Coverage</b>: FL5: 1.8%, FL10: 3.3%, FL20: 10.1%, FL50: 29.0%, FL100: 51.8%, FL200: 76.6%, FL300: 89.1%, FL400: 95.2%
+]]></description>
+<Point>
+<coordinates>7.000000,43.700000,0</coordinates>
+</Point>
+</Placemark>
+<Placemark>
+<name>Rank 47 — 24.1097</name>
+<styleUrl>#defaultStyle</styleUrl>
+<description><![CDATA[
+<b>Rank</b>: 47<br><b>Weighted score</b>: 24.109688<br><b>Latitude</b>: 43.900000<br><b>Longitude</b>: 7.200000<br><b>Coverage</b>: FL5: 6.2%, FL10: 7.0%, FL20: 8.9%, FL50: 20.5%, FL100: 44.7%, FL200: 71.0%, FL300: 84.5%, FL400: 94.0%
+]]></description>
+<Point>
+<coordinates>7.200000,43.900000,0</coordinates>
+</Point>
+</Placemark>
+<Placemark>
+<name>Rank 48 — 23.4189</name>
+<styleUrl>#defaultStyle</styleUrl>
+<description><![CDATA[
+<b>Rank</b>: 48<br><b>Weighted score</b>: 23.418906<br><b>Latitude</b>: 44.000000<br><b>Longitude</b>: 7.300000<br><b>Coverage</b>: FL5: 2.6%, FL10: 3.0%, FL20: 4.2%, FL50: 18.3%, FL100: 53.3%, FL200: 84.2%, FL300: 92.3%, FL400: 95.7%
+]]></description>
+<Point>
+<coordinates>7.300000,44.000000,0</coordinates>
+</Point>
+</Placemark>
+<Placemark>
+<name>Rank 49 — 22.6945</name>
+<styleUrl>#defaultStyle</styleUrl>
+<description><![CDATA[
+<b>Rank</b>: 49<br><b>Weighted score</b>: 22.694531<br><b>Latitude</b>: 43.800000<br><b>Longitude</b>: 7.200000<br><b>Coverage</b>: FL5: 1.6%, FL10: 3.1%, FL20: 6.7%, FL50: 20.9%, FL100: 45.4%, FL200: 79.1%, FL300: 89.8%, FL400: 96.7%
+]]></description>
+<Point>
+<coordinates>7.200000,43.800000,0</coordinates>
+</Point>
+</Placemark>
+<Placemark>
+<name>Rank 50 — 22.2933</name>
+<styleUrl>#defaultStyle</styleUrl>
+<description><![CDATA[
+<b>Rank</b>: 50<br><b>Weighted score</b>: 22.293281<br><b>Latitude</b>: 43.800000<br><b>Longitude</b>: 6.600000<br><b>Coverage</b>: FL5: 0.0%, FL10: 0.0%, FL20: 0.0%, FL50: 7.0%, FL100: 63.3%, FL200: 96.9%, FL300: 97.5%, FL400: 97.5%
+]]></description>
+<Point>
+<coordinates>6.600000,43.800000,0</coordinates>
+</Point>
+</Placemark>
+<Placemark>
+<name>Rank 51 — 21.8739</name>
+<styleUrl>#defaultStyle</styleUrl>
+<description><![CDATA[
+<b>Rank</b>: 51<br><b>Weighted score</b>: 21.873906<br><b>Latitude</b>: 44.000000<br><b>Longitude</b>: 7.500000<br><b>Coverage</b>: FL5: 7.7%, FL10: 8.6%, FL20: 10.7%, FL50: 18.9%, FL100: 34.6%, FL200: 54.5%, FL300: 71.5%, FL400: 83.6%
+]]></description>
+<Point>
+<coordinates>7.500000,44.000000,0</coordinates>
+</Point>
+</Placemark>
+<Placemark>
+<name>Rank 52 — 21.1981</name>
+<styleUrl>#defaultStyle</styleUrl>
+<description><![CDATA[
+<b>Rank</b>: 52<br><b>Weighted score</b>: 21.198125<br><b>Latitude</b>: 43.900000<br><b>Longitude</b>: 6.700000<br><b>Coverage</b>: FL5: 0.0%, FL10: 0.0%, FL20: 0.0%, FL50: 3.7%, FL100: 54.6%, FL200: 96.3%, FL300: 97.2%, FL400: 97.2%
+]]></description>
+<Point>
+<coordinates>6.700000,43.900000,0</coordinates>
+</Point>
+</Placemark>
+<Placemark>
+<name>Rank 53 — 20.5944</name>
+<styleUrl>#defaultStyle</styleUrl>
+<description><![CDATA[
+<b>Rank</b>: 53<br><b>Weighted score</b>: 20.594375<br><b>Latitude</b>: 43.900000<br><b>Longitude</b>: 6.900000<br><b>Coverage</b>: FL5: 0.0%, FL10: 0.0%, FL20: 0.4%, FL50: 9.9%, FL100: 46.5%, FL200: 87.2%, FL300: 97.1%, FL400: 97.1%
+]]></description>
+<Point>
+<coordinates>6.900000,43.900000,0</coordinates>
+</Point>
+</Placemark>
+<Placemark>
+<name>Rank 54 — 20.0231</name>
+<styleUrl>#defaultStyle</styleUrl>
+<description><![CDATA[
+<b>Rank</b>: 54<br><b>Weighted score</b>: 20.023125<br><b>Latitude</b>: 44.100000<br><b>Longitude</b>: 7.000000<br><b>Coverage</b>: FL5: 0.2%, FL10: 0.2%, FL20: 0.7%, FL50: 8.8%, FL100: 52.7%, FL200: 84.1%, FL300: 88.5%, FL400: 88.5%
+]]></description>
+<Point>
+<coordinates>7.000000,44.100000,0</coordinates>
+</Point>
+</Placemark>
+<Placemark>
+<name>Rank 55 — 17.2141</name>
+<styleUrl>#defaultStyle</styleUrl>
+<description><![CDATA[
+<b>Rank</b>: 55<br><b>Weighted score</b>: 17.214063<br><b>Latitude</b>: 44.000000<br><b>Longitude</b>: 6.800000<br><b>Coverage</b>: FL5: 0.0%, FL10: 0.0%, FL20: 0.1%, FL50: 2.5%, FL100: 29.2%, FL200: 73.8%, FL300: 92.5%, FL400: 96.0%
+]]></description>
+<Point>
+<coordinates>6.800000,44.000000,0</coordinates>
+</Point>
+</Placemark>
+<Placemark>
+<name>Rank 56 — 16.4138</name>
+<styleUrl>#defaultStyle</styleUrl>
+<description><![CDATA[
+<b>Rank</b>: 56<br><b>Weighted score</b>: 16.413750<br><b>Latitude</b>: 44.000000<br><b>Longitude</b>: 7.000000<br><b>Coverage</b>: FL5: 0.0%, FL10: 0.0%, FL20: 0.0%, FL50: 1.5%, FL100: 25.2%, FL200: 68.9%, FL300: 92.3%, FL400: 96.2%
+]]></description>
+<Point>
+<coordinates>7.000000,44.000000,0</coordinates>
+</Point>
+</Placemark>
+<Placemark>
+<name>Rank 57 — 14.0136</name>
+<styleUrl>#defaultStyle</styleUrl>
+<description><![CDATA[
+<b>Rank</b>: 57<br><b>Weighted score</b>: 14.013594<br><b>Latitude</b>: 44.100000<br><b>Longitude</b>: 6.900000<br><b>Coverage</b>: FL5: 0.0%, FL10: 0.0%, FL20: 0.0%, FL50: 7.6%, FL100: 20.7%, FL200: 47.4%, FL300: 75.7%, FL400: 89.9%
+]]></description>
+<Point>
+<coordinates>6.900000,44.100000,0</coordinates>
+</Point>
+</Placemark>
+<Placemark>
+<name>Rank 58 — 12.1611</name>
+<styleUrl>#defaultStyle</styleUrl>
+<description><![CDATA[
+<b>Rank</b>: 58<br><b>Weighted score</b>: 12.161094<br><b>Latitude</b>: 44.100000<br><b>Longitude</b>: 7.500000<br><b>Coverage</b>: FL5: 1.8%, FL10: 2.0%, FL20: 2.6%, FL50: 5.1%, FL100: 15.6%, FL200: 34.8%, FL300: 59.8%, FL400: 72.9%
+]]></description>
+<Point>
+<coordinates>7.500000,44.100000,0</coordinates>
+</Point>
+</Placemark>
+<Placemark>
+<name>Rank 59 — 8.2025</name>
+<styleUrl>#defaultStyle</styleUrl>
+<description><![CDATA[
+<b>Rank</b>: 59<br><b>Weighted score</b>: 8.202500<br><b>Latitude</b>: 44.100000<br><b>Longitude</b>: 7.100000<br><b>Coverage</b>: FL5: 0.4%, FL10: 0.5%, FL20: 1.5%, FL50: 4.6%, FL100: 12.1%, FL200: 25.6%, FL300: 37.7%, FL400: 53.0%
+]]></description>
+<Point>
+<coordinates>7.100000,44.100000,0</coordinates>
+</Point>
+</Placemark>
+</Folder>
+</Document>
+</kml>
