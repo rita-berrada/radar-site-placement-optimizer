@@ -1,22 +1,9 @@
-"""
-Example Usage: Electrical Stations and Roads Masks
 
-This script demonstrates how to use the electrical stations and roads masks
-for radar site location study. It shows how to:
-1. Load terrain data
-2. Create electrical stations masks (REQ_06: 500m proximity)
-3. Create roads proximity masks (construction access)
-4. Combine with other geographical masks
-5. Visualize results
-
-This extends Lot 2 - Radar site location study with infrastructure constraints.
-"""
 
 import numpy as np
 from site_location_masks import mask_land, mask_50km, mask_french_territory, combine_masks
 from electrical_stations_masks import mask_electrical_from_json
 from roads_masks import mask_roads_from_geojson  
-from buildings_masks import mask_buildings_from_geojson
 from visualize_site_location_masks import plot_masks_overlay
 from export_site_location_masks_kml import export_masks_to_kmz
 import os
@@ -35,7 +22,7 @@ def main():
     """Example usage of electrical stations and roads masks."""
     
     print("="*70)
-    print("Infrastructure Masks - Electrical Stations & Roads")
+    print("Infrastructure Masks - Electrical Stations & Roads & Buildings")
     print("="*70)
     
     # ============================================================
@@ -116,7 +103,7 @@ def main():
     # ============================================================
     # 5. Create roads proximity mask
     # ============================================================
-    print("\n5. Creating roads proximity mask (MAJOR ROADS ONLY - ULTRA FAST)...")
+    print("\n5. Creating roads proximity mask (MAJOR ROADS - 500m)...")
     
     roads_file = 'roads_nice_50km.geojson'
     if not os.path.exists(roads_file):
@@ -127,28 +114,31 @@ def main():
             mask_roads = mask_roads_from_geojson(
                 lats, lons, 
                 geojson_file=roads_file, 
-                max_distance_m=2000.0,  # 2 km from major road
-                major_roads_only=True   # Only motorways, trunk, primary, secondary
+                max_distance_m=500.0,  # 500m from major road
+                major_roads_only=True   # Only motorways, trunk, primary, secondary, tertiary
             )
             roads_count = np.sum(mask_roads)
             roads_pct = roads_count / mask_roads.size * 100
             print(f"   ✓ Roads proximity mask: {roads_count:,} admissible points ({roads_pct:.1f}%)")
-            print(f"   ✓ Construction access within 2000m of MAJOR roads")
+            print(f"   ✓ Construction access within 500m of MAJOR roads")
         except Exception as e:
             print(f"   ✗ Error creating roads mask: {e}")
             mask_roads = None
 
     # ============================================================
-    # 5b. Create buildings exclusion mask
+    # 5b. Create buildings exclusion mask (OPTIONAL)
     # ============================================================
-    print("\n5b. Creating buildings exclusion mask (NO radar within 1000m of buildings).")
+    print("\n5b. Creating buildings exclusion mask (OPTIONAL - >1000m from buildings)...")
     
     buildings_file = 'buildings.geojson'
     if not os.path.exists(buildings_file):
-        print(f"   ⚠ Warning: {buildings_file} not found, skipping buildings mask")
+        print(f"   ⚠ Info: {buildings_file} not found, skipping buildings mask (optional)")
         mask_buildings = None
     else:
         try:
+            # Import buildings mask module if it exists
+            from buildings_masks import mask_buildings_from_geojson
+            
             # True = admissible (farther than 1000m from any building)
             mask_buildings = mask_buildings_from_geojson(
                 lats, lons,
@@ -159,8 +149,11 @@ def main():
             buildings_pct = buildings_count / mask_buildings.size * 100
             print(f"   ✓ Buildings exclusion mask: {buildings_count:,} admissible points ({buildings_pct:.1f}%)")
             print(f"   ✓ Constraint: distance > 1000m from any building")
+        except ImportError:
+            print(f"   ⚠ Info: buildings_masks module not found, skipping (optional)")
+            mask_buildings = None
         except Exception as e:
-            print(f"   ✗ Error creating buildings mask: {e}")
+            print(f"   ⚠ Info: Could not create buildings mask: {e} (optional)")
             mask_buildings = None
 
     # ============================================================
@@ -178,7 +171,6 @@ def main():
         masks_to_combine.append(mask_roads)
     if mask_buildings is not None:
         masks_to_combine.append(mask_buildings)
-
     
     mask_combined = combine_masks(*masks_to_combine)
     combined_count = np.sum(mask_combined)
@@ -186,13 +178,11 @@ def main():
     print(f"   ✓ Combined mask: {combined_count:,} admissible points ({combined_pct:.1f}%)")
 
     # Save authorized (admissible) points to NPZ
+    print("\n   Saving authorized points...")
     admissible_i, admissible_j = np.where(mask_combined)
-    assert np.all(mask_combined[admissible_i, admissible_j])
-
-
     authorized_lat = lats[admissible_i]
     authorized_lon = lons[admissible_j]
-    authorized_z   = Z[admissible_i, admissible_j]
+    authorized_z = Z[admissible_i, admissible_j]
 
     np.savez(
         "authorized_points_all_masks.npz",
@@ -201,8 +191,7 @@ def main():
         z=authorized_z,
         mask=mask_combined
     )
-    print("✓ Saved: authorized_points_all_masks.npz")
-
+    print(f"   ✓ Saved authorized points: authorized_points_all_masks.npz ({len(authorized_lat):,} points)")
     
     # ============================================================
     # 7. Display statistics
@@ -219,11 +208,10 @@ def main():
         print(f"   {'Electrical 500m (REQ_06)':<30} {electrical_count:>15,} {electrical_pct:>14.1f}%")
     
     if mask_roads is not None:
-        print(f"   {'Roads 2000m (major roads)':<30} {roads_count:>15,} {roads_pct:>14.1f}%")
+        print(f"   {'Roads 500m (major roads)':<30} {roads_count:>15,} {roads_pct:>14.1f}%")
 
     if mask_buildings is not None:
-        print(f"   {'Buildings 1000m exclusion':<30} {buildings_count:>15,} {buildings_pct:>14.1f}%")
-
+        print(f"   {'Buildings >1000m exclusion':<30} {buildings_count:>15,} {buildings_pct:>14.1f}%")
     
     print(f"   {'Combined mask (ALL)':<30} {combined_count:>15,} {combined_pct:>14.1f}%")
     print("   " + "-"*60)
@@ -244,11 +232,10 @@ def main():
         masks_dict['Electrical 500m (REQ_06)'] = mask_electrical
     
     if mask_roads is not None:
-        masks_dict['Roads 2000m (Major Roads)'] = mask_roads
+        masks_dict['Roads 500m (Major Roads)'] = mask_roads
 
     if mask_buildings is not None:
         masks_dict['Buildings >1000m'] = mask_buildings
-
     
     masks_dict['Combined Mask (ALL)'] = mask_combined
     
@@ -344,16 +331,21 @@ def main():
     print(f"✓ French territory mask: {french_count:,} admissible points ({french_pct:.1f}%)")
     
     if mask_electrical is not None:
-        print(f"✓ Electrical 500m (REQ_06): {electrical_count:,} admissible points ({electrical_pct:.1f}%)")
+        print(f"✓ Electrical 500m : {electrical_count:,} admissible points ({electrical_pct:.1f}%)")
     
     if mask_roads is not None:
-        print(f"✓ Roads 2000m (major roads): {roads_count:,} admissible points ({roads_pct:.1f}%)")
+        print(f"✓ Roads 500m : {roads_count:,} admissible points ({roads_pct:.1f}%)")
+    
+    if mask_buildings is not None:
+        print(f"✓ Buildings >1000m exclusion: {buildings_count:,} admissible points ({buildings_pct:.1f}%)")
     
     print(f"✓ Combined mask (ALL): {combined_count:,} admissible points ({combined_pct:.1f}%)")
     
     print("\n✓ Infrastructure constraints implemented:")
     print("  - REQ_06: Electrical access < 500m from Enedis stations")
-    print("  - Construction access < 2000m from MAJOR road network (motorway/trunk/primary/secondary)")
+    print("  - Construction access < 500m from MAJOR road network (motorway/trunk/primary/secondary/tertiary)")
+    if mask_buildings is not None:
+        print("  - Building exclusion: distance > 1000m from any building")
     print("  - Combined with geographical constraints (land, distance, territory)")
     
     print("\nNext steps:")
@@ -364,6 +356,7 @@ def main():
     print("\nOutput files:")
     print("  - infrastructure_masks_overlay.png: PNG visualization")
     print("  - infrastructure_masks.kmz: Google Earth visualization (3D interactive)")
+    print("  - authorized_points_all_masks.npz: Authorized candidate points")
     print("="*70 + "\n")
 
 
