@@ -1,321 +1,280 @@
 """
-Site Location Masks KML/KMZ Export Module
+Example Usage: Site Location Masks
 
-This module provides functions to export geographical masks to KML/KMZ format
-for visualization in Google Earth.
+This script demonstrates how to use the geographical masks for radar site location study.
+It shows how to:
+1. Load terrain data
+2. Create individual masks (land/inland, distance, territory)
+3. Combine masks
+4. Visualize results (PNG)
+5. Export results (KMZ for Google Earth)
+6. Extract authorized candidate points, round them to 0.1°, and save to NPZ
 
-Masks are exported with:
-- Admissible areas: transparent (not shown, allowing Google Earth base map to show)
-- Excluded areas: grey with partial opacity overlaying the map
+This is for Lot 2 - Radar site location study, where masks define admissible
+search areas based on static geographical constraints.
 """
 
 import numpy as np
-import zipfile
-import xml.etree.ElementTree as ET
-from typing import Dict, Optional
-from pathlib import Path
+from scipy.ndimage import binary_dilation
+
+from visualize_terrain import load_terrain_npz
+from site_location_masks import mask_land, mask_50km, mask_french_territory, combine_masks
+from visualize_site_location_masks import plot_masks_overlay
+from export_site_location_masks_kml import export_masks_to_kmz
 
 
-def _create_grouped_polygons(folder: ET.Element, mask: np.ndarray, 
-                             lats: np.ndarray, lons: np.ndarray, 
-                             style_url: str) -> None:
-    """
-    Create grouped polygons for excluded areas to reduce pixelation.
-    
-    Groups adjacent excluded cells into larger rectangular polygons for smoother
-    boundaries in Google Earth visualization.
-    
-    Parameters:
-    -----------
-    folder : ET.Element
-        KML Folder element to add polygons to
-    mask : np.ndarray
-        Boolean mask (True=admissible, False=excluded)
-    lats : np.ndarray
-        1D array of latitude values
-    lons : np.ndarray
-        1D array of longitude values
-    style_url : str
-        Style URL for the polygons
-    """
-    excluded = ~mask  # True where excluded
-    
-    # Use a simple grouping algorithm: merge horizontally adjacent cells
-    # This reduces the number of polygons and creates smoother boundaries
-    visited = np.zeros_like(excluded, dtype=bool)
-    polygon_count = 0
-    
-    for i in range(len(lats) - 1):
-        for j in range(len(lons) - 1):
-            if excluded[i, j] and not visited[i, j]:
-                # Find the extent of this excluded region (horizontal grouping)
-                # Start from current cell
-                start_j = j
-                end_j = j
-                
-                # Extend horizontally as long as cells are excluded
-                while end_j + 1 < len(lons) - 1 and excluded[i, end_j + 1] and not visited[i, end_j + 1]:
-                    end_j += 1
-                
-                # Try to extend vertically to form a larger rectangle
-                end_i = i
-                can_extend = True
-                while can_extend and end_i + 1 < len(lats) - 1:
-                    # Check if next row has excluded cells in the same column range
-                    if np.all(excluded[end_i + 1, start_j:end_j + 1]) and \
-                       np.all(~visited[end_i + 1, start_j:end_j + 1]):
-                        end_i += 1
-                    else:
-                        can_extend = False
-                
-                # Mark all cells in this group as visited
-                visited[i:end_i + 1, start_j:end_j + 1] = True
-                
-                # Create polygon for this group
-                lat0, lat1 = lats[i], lats[end_i + 1]
-                lon0, lon1 = lons[start_j], lons[end_j + 1]
-                
-                placemark = ET.SubElement(folder, "Placemark")
-                ET.SubElement(placemark, "name").text = f"Excluded Region {polygon_count}"
-                ET.SubElement(placemark, "styleUrl").text = style_url
-                
-                polygon = ET.SubElement(placemark, "Polygon")
-                outer_boundary = ET.SubElement(polygon, "outerBoundaryIs")
-                linear_ring = ET.SubElement(outer_boundary, "LinearRing")
-                coordinates = ET.SubElement(linear_ring, "coordinates")
-                
-                # Define polygon corners (rectangle)
-                coord_str = f"{lon0},{lat0},0 {lon1},{lat0},0 {lon1},{lat1},0 {lon0},{lat1},0 {lon0},{lat0},0"
-                coordinates.text = coord_str
-                
-                polygon_count += 1
+def main():
+    """Example usage of site location masks."""
 
+    print("=" * 70)
+    print("Site Location Masks - Example Usage")
+    print("=" * 70)
 
-def create_mask_kml(
-    mask: np.ndarray,
-    lats: np.ndarray,
-    lons: np.ndarray,
-    mask_name: str = "Site Location Mask",
-    nice_lat: Optional[float] = None,
-    nice_lon: Optional[float] = None,
-    excluded_color: str = "CC808080"  # Grey with 80% opacity (AABBGGRR format)
-) -> ET.Element:
-    """
-    Create KML structure for a single mask.
-    
-    Parameters:
-    -----------
-    mask : np.ndarray
-        2D boolean array (True=admissible, False=excluded)
-    lats : np.ndarray
-        1D array of latitude values
-    lons : np.ndarray
-        1D array of longitude values
-    mask_name : str
-        Name for the mask
-    nice_lat : float, optional
-        Nice airport latitude
-    nice_lon : float, optional
-        Nice airport longitude
-    excluded_color : str
-        Color for excluded areas (AABBGGRR hex format, default: grey with 50% opacity)
-    
-    Returns:
-    --------
-    ET.Element
-        KML Document element
-    """
-    # Create KML document
-    kml = ET.Element("kml", xmlns="http://www.opengis.net/kml/2.2")
-    document = ET.SubElement(kml, "Document")
-    
-    # Document name
-    ET.SubElement(document, "name").text = mask_name
-    
-    # Create style for excluded areas
-    excluded_style = ET.SubElement(document, "Style", id="excluded_style")
-    poly_style = ET.SubElement(excluded_style, "PolyStyle")
-    ET.SubElement(poly_style, "color").text = excluded_color
-    ET.SubElement(poly_style, "fill").text = "1"
-    ET.SubElement(poly_style, "outline").text = "0"
-    
-    # Create folder for excluded area polygons
-    folder = ET.SubElement(document, "Folder")
-    ET.SubElement(folder, "name").text = "Excluded Areas"
-    ET.SubElement(folder, "description").text = "Areas excluded from radar site location (grey overlay)"
-    
-    # Create polygons only for excluded areas (admissible areas are transparent/not shown)
-    # Group adjacent excluded cells into larger polygons for smoother boundaries
-    _create_grouped_polygons(folder, mask, lats, lons, "#excluded_style")
-    
-    # Add reference points folder
-    reference_folder = ET.SubElement(document, "Folder")
-    ET.SubElement(reference_folder, "name").text = "Reference Points"
-    
-    # Add Nice Airport as reference point
-    if nice_lat is not None and nice_lon is not None:
-        nice_placemark = ET.SubElement(reference_folder, "Placemark")
-        ET.SubElement(nice_placemark, "name").text = "Nice Airport (LFMN)"
-        ET.SubElement(nice_placemark, "description").text = (
-            f"Nice Côte d'Azur Airport at ({nice_lat:.6f}°N, {nice_lon:.6f}°E) - "
-            "Reference point for distance constraint"
+    # ============================================================
+    # 1. Load terrain data
+    # ============================================================
+    print("\n1. Loading terrain data...")
+    terrain_file = "terrain_mat.npz"
+
+    try:
+        lats, lons, Z = load_terrain_npz(terrain_file)
+        print(f"   ✓ Terrain loaded: {len(lats)} x {len(lons)} grid points")
+        print(f"   ✓ Latitude range: {lats.min():.6f} to {lats.max():.6f}")
+        print(f"   ✓ Longitude range: {lons.min():.6f} to {lons.max():.6f}")
+        print(f"   ✓ Elevation range: {Z.min():.1f} to {Z.max():.1f} meters")
+    except FileNotFoundError:
+        print(f"   ✗ Error: Terrain file '{terrain_file}' not found.")
+        return
+    except Exception as e:
+        print(f"   ✗ Error loading terrain: {e}")
+        return
+
+    # ============================================================
+    # 2. Define reference point (Nice airport)
+    # ============================================================
+    print("\n2. Defining reference point...")
+    nice_lat = 43.6584  # Nice Airport latitude
+    nice_lon = 7.2159   # Nice Airport longitude
+    print(f"   ✓ Reference point: Nice Airport")
+    print(f"   ✓ Coordinates: ({nice_lat:.4f}, {nice_lon:.4f})")
+
+    # ============================================================
+    # 3. Create individual masks
+    # ============================================================
+    print("\n3. Creating geographical masks...")
+
+    # 3.a) Onshore constraint: Radar must be on land (Z > 0)
+    print("\n   a) Creating land mask (onshore constraint)...")
+    mask_land_result = mask_land(lats, lons, Z)
+    land_count = int(np.sum(mask_land_result))
+    land_pct = land_count / mask_land_result.size * 100.0
+    print(f"      ✓ Land mask created: {land_count:,} admissible points ({land_pct:.1f}%)")
+    print(f"      ✓ Shape: {mask_land_result.shape}")
+
+    # 3.b) Distance constraint: Within 50km of Nice airport
+    print("\n   b) Creating 50km distance mask...")
+    radius_km = 50.0
+    mask_50km_result = mask_50km(lats, lons, nice_lat, nice_lon, radius_km=radius_km)
+    within_50km = int(np.sum(mask_50km_result))
+    within_pct = within_50km / mask_50km_result.size * 100.0
+    print(f"      ✓ 50km mask created: {within_50km:,} admissible points ({within_pct:.1f}%)")
+    print(f"      ✓ Shape: {mask_50km_result.shape}")
+
+    # 3.c) French territory constraint (heuristic): excludes Monaco & lon > 7.5 (Italy)
+    print("\n   c) Creating French territory mask...")
+    mask_french_result = mask_french_territory(lats, lons)
+    french_count = int(np.sum(mask_french_result))
+    french_pct = french_count / mask_french_result.size * 100.0
+    print(f"      ✓ French territory mask created: {french_count:,} admissible points ({french_pct:.1f}%)")
+    print(f"      ✓ Shape: {mask_french_result.shape}")
+    print(f"      ✓ Excludes Monaco and Italy")
+
+    # 3.d) Inland correction: exclude near-coast areas (convert land -> inland)
+    print("\n   d) Creating inland mask (exclude near-coast areas)...")
+    # Dilate the sea into the land to define a coastal exclusion belt.
+    # iterations controls the width of the excluded coastal band.
+    coastal_band = binary_dilation(~mask_land_result, iterations=3)
+
+    # Keep only inland points (land AND not close to the coastline)
+    mask_inland = mask_land_result & (~coastal_band)
+
+    inland_count = int(np.sum(mask_inland))
+    inland_pct = inland_count / mask_inland.size * 100.0
+    print(f"      ✓ Inland mask created: {inland_count:,} admissible points ({inland_pct:.1f}%)")
+    print(f"      ✓ Shape: {mask_inland.shape}")
+
+    # ============================================================
+    # 4. Combine masks
+    # ============================================================
+    print("\n4. Combining masks...")
+    mask_combined = combine_masks(mask_inland, mask_50km_result, mask_french_result)
+    combined_count = int(np.sum(mask_combined))
+    combined_pct = combined_count / mask_combined.size * 100.0
+    print(f"   ✓ Combined mask: {combined_count:,} admissible points ({combined_pct:.1f}%)")
+    print(f"   ✓ Shape: {mask_combined.shape}")
+
+    # Verify combination logic
+    assert combined_count <= land_count, "Combined should have fewer or equal points than land mask"
+    assert combined_count <= inland_count, "Combined should have fewer or equal points than inland mask"
+    assert combined_count <= within_50km, "Combined should have fewer or equal points than 50km mask"
+    assert combined_count <= french_count, "Combined should have fewer or equal points than French territory mask"
+    print("   ✓ Combination logic verified (subset of all individual masks)")
+
+    # ============================================================
+    # 5. Display statistics
+    # ============================================================
+    print("\n5. Mask Statistics:")
+    print("   " + "-" * 60)
+    print(f"   {'Mask':<25} {'Admissible Points':<20} {'Percentage':<15}")
+    print("   " + "-" * 60)
+    print(f"   {'Land mask':<25} {land_count:>15,} {land_pct:>14.1f}%")
+    print(f"   {'Inland mask (no coast)':<25} {inland_count:>15,} {inland_pct:>14.1f}%")
+    print(f"   {'50km distance mask':<25} {within_50km:>15,} {within_pct:>14.1f}%")
+    print(f"   {'French territory mask':<25} {french_count:>15,} {french_pct:>14.1f}%")
+    print(f"   {'Combined mask':<25} {combined_count:>15,} {combined_pct:>14.1f}%")
+    print("   " + "-" * 60)
+
+    # ============================================================
+    # 6. Visualize masks (PNG overlay)
+    # ============================================================
+    print("\n6. Visualizing masks (PNG overlay on terrain)...")
+
+    masks_dict = {
+        "Land Mask (Onshore)": mask_land_result,
+        "Inland Mask (No Coast)": mask_inland,
+        "50km Distance Mask": mask_50km_result,
+        "French Territory Mask": mask_french_result,
+        "Combined Mask": mask_combined,
+    }
+
+    try:
+        # For faster visualization, use a subset if grid is very large
+        if len(lats) * len(lons) > 500000:
+            print("   (Using subset for faster visualization)")
+            step = max(1, len(lats) // 300)
+            lats_viz = lats[::step]
+            lons_viz = lons[::step]
+            Z_viz = Z[::step, ::step]
+            masks_viz = {name: mask[::step, ::step] for name, mask in masks_dict.items()}
+        else:
+            lats_viz = lats
+            lons_viz = lons
+            Z_viz = Z
+            masks_viz = masks_dict
+
+        plot_masks_overlay(
+            lats_viz,
+            lons_viz,
+            Z_viz,
+            masks_viz,
+            nice_lat,
+            nice_lon,
+            save_path="site_location_masks_overlay.png",
         )
-        
-        # Add icon style
-        nice_style = ET.SubElement(nice_placemark, "Style")
-        nice_icon_style = ET.SubElement(nice_style, "IconStyle")
-        ET.SubElement(nice_icon_style, "color").text = "ffff0000"  # Blue (AABBGGRR format)
-        ET.SubElement(nice_icon_style, "scale").text = "1.2"
-        
-        nice_point = ET.SubElement(nice_placemark, "Point")
-        nice_coords = ET.SubElement(nice_point, "coordinates")
-        nice_coords.text = f"{nice_lon},{nice_lat},0"
-    
-    # Add statistics folder
-    stats_folder = ET.SubElement(document, "Folder")
-    ET.SubElement(stats_folder, "name").text = "Statistics"
-    
-    admissible_count = np.sum(mask)
-    total_count = mask.size
-    admissible_pct = admissible_count / total_count * 100
-    
-    stats_placemark = ET.SubElement(stats_folder, "Placemark")
-    ET.SubElement(stats_placemark, "name").text = "Mask Statistics"
-    ET.SubElement(stats_placemark, "description").text = (
-        f"Total grid points: {total_count:,}\n"
-        f"Admissible points: {admissible_count:,} ({admissible_pct:.1f}%)\n"
-        f"Excluded points: {total_count - admissible_count:,} ({100 - admissible_pct:.1f}%)"
-    )
-    
-    return kml
+        print("   ✓ PNG visualization saved (admissible=transparent, excluded=grey overlay)")
+    except Exception as e:
+        print(f"   ✗ Error in PNG visualization: {e}")
+        import traceback
+        traceback.print_exc()
 
+    # ============================================================
+    # 7. Export to Google Earth (KMZ)
+    # ============================================================
+    print("\n7. Exporting masks to Google Earth (KMZ)...")
 
-def export_mask_to_kml(
-    mask: np.ndarray,
-    lats: np.ndarray,
-    lons: np.ndarray,
-    output_path: str,
-    mask_name: str = "Site Location Mask",
-    nice_lat: Optional[float] = None,
-    nice_lon: Optional[float] = None
-) -> None:
-    """
-    Export a single mask to KML file.
-    
-    Parameters:
-    -----------
-    mask : np.ndarray
-        2D boolean array (True=admissible, False=excluded)
-    lats : np.ndarray
-        1D array of latitude values
-    lons : np.ndarray
-        1D array of longitude values
-    output_path : str
-        Output KML file path
-    mask_name : str, optional
-        Name for the mask
-    nice_lat : float, optional
-        Nice airport latitude
-    nice_lon : float, optional
-        Nice airport longitude
-    """
-    kml = create_mask_kml(mask, lats, lons, mask_name, nice_lat, nice_lon)
-    
-    # Write to file
-    tree = ET.ElementTree(kml)
-    ET.indent(tree, space="  ")
-    tree.write(output_path, encoding='utf-8', xml_declaration=True)
-    print(f"Exported mask to KML: {output_path}")
+    try:
+        # For faster export, use a subset if grid is very large
+        if len(lats) * len(lons) > 500000:
+            print("   (Using subset for faster export)")
+            step = max(1, len(lats) // 200)
+            lats_export = lats[::step]
+            lons_export = lons[::step]
+            masks_export = {name: mask[::step, ::step] for name, mask in masks_dict.items()}
+        else:
+            lats_export = lats
+            lons_export = lons
+            masks_export = masks_dict
 
-
-def export_masks_to_kmz(
-    masks_dict: Dict[str, np.ndarray],
-    lats: np.ndarray,
-    lons: np.ndarray,
-    output_path: str = "site_location_masks.kmz",
-    nice_lat: Optional[float] = None,
-    nice_lon: Optional[float] = None
-) -> None:
-    """
-    Export multiple masks to a single KMZ file.
-    
-    Parameters:
-    -----------
-    masks_dict : Dict[str, np.ndarray]
-        Dictionary mapping mask names to boolean arrays
-    lats : np.ndarray
-        1D array of latitude values
-    lons : np.ndarray
-        1D array of longitude values
-    output_path : str, optional
-        Output KMZ file path (default: "site_location_masks.kmz")
-    nice_lat : float, optional
-        Nice airport latitude
-    nice_lon : float, optional
-        Nice airport longitude
-    """
-    # Create main KML document
-    kml = ET.Element("kml", xmlns="http://www.opengis.net/kml/2.2")
-    document = ET.SubElement(kml, "Document")
-    ET.SubElement(document, "name").text = "Site Location Masks"
-    ET.SubElement(document, "description").text = (
-        "Geographical masks for radar site location study. "
-        "Grey areas are excluded, transparent areas are admissible."
-    )
-    
-    # Create folder for each mask
-    for mask_name, mask in masks_dict.items():
-        # Verify mask shape
-        if mask.shape != (len(lats), len(lons)):
-            raise ValueError(f"Mask '{mask_name}' has shape {mask.shape}, expected ({len(lats)}, {len(lons)})")
-        
-        mask_folder = ET.SubElement(document, "Folder")
-        ET.SubElement(mask_folder, "name").text = mask_name
-        
-        # Create style for excluded areas
-        style_id = f"excluded_style_{mask_name.replace(' ', '_')}"
-        excluded_style = ET.SubElement(document, "Style", id=style_id)
-        poly_style = ET.SubElement(excluded_style, "PolyStyle")
-        ET.SubElement(poly_style, "color").text = "CC808080"  # Grey with 80% opacity
-        ET.SubElement(poly_style, "fill").text = "1"
-        ET.SubElement(poly_style, "outline").text = "0"
-        
-        # Create subfolder for excluded areas
-        excluded_folder = ET.SubElement(mask_folder, "Folder")
-        ET.SubElement(excluded_folder, "name").text = "Excluded Areas"
-        
-        # Create grouped polygons for excluded cells (smoother boundaries)
-        _create_grouped_polygons(excluded_folder, mask, lats, lons, f"#{style_id}")
-    
-    # Add reference points folder
-    reference_folder = ET.SubElement(document, "Folder")
-    ET.SubElement(reference_folder, "name").text = "Reference Points"
-    
-    if nice_lat is not None and nice_lon is not None:
-        nice_placemark = ET.SubElement(reference_folder, "Placemark")
-        ET.SubElement(nice_placemark, "name").text = "Nice Airport (LFMN)"
-        ET.SubElement(nice_placemark, "description").text = (
-            f"Nice Côte d'Azur Airport at ({nice_lat:.6f}°N, {nice_lon:.6f}°E)"
+        export_masks_to_kmz(
+            masks_export,
+            lats_export,
+            lons_export,
+            "site_location_masks.kmz",
+            nice_lat=nice_lat,
+            nice_lon=nice_lon,
         )
-        
-        nice_style = ET.SubElement(nice_placemark, "Style")
-        nice_icon_style = ET.SubElement(nice_style, "IconStyle")
-        ET.SubElement(nice_icon_style, "color").text = "ffff0000"  # Blue
-        ET.SubElement(nice_icon_style, "scale").text = "1.2"
-        
-        nice_point = ET.SubElement(nice_placemark, "Point")
-        nice_coords = ET.SubElement(nice_point, "coordinates")
-        nice_coords.text = f"{nice_lon},{nice_lat},0"
+        print("   ✓ KMZ file exported (open in Google Earth)")
+    except Exception as e:
+        print(f"   ✗ Error in KMZ export: {e}")
+        import traceback
+        traceback.print_exc()
+
+    # ============================================================
+    # 8. Candidate site selection + rounding to 0.1° + save NPZ
+    # ============================================================
+    print("\n8. Example: Finding candidate sites...")
+
+    admissible_indices = np.where(mask_combined)
+    n_candidates = len(admissible_indices[0])
+    print(f"   ✓ Found {n_candidates:,} admissible grid points")
+
     
-    # Create KMZ file
-    kmz_path = Path(output_path)
-    with zipfile.ZipFile(kmz_path, 'w', zipfile.ZIP_DEFLATED) as kmz:
-        # Write KML to string
-        tree = ET.ElementTree(kml)
-        ET.indent(tree, space="  ")
-        kml_str = ET.tostring(kml, encoding='utf-8', xml_declaration=True)
-        
-        # Write to KMZ
-        kmz.writestr('doc.kml', kml_str)
-    
-    print(f"Exported {len(masks_dict)} mask(s) to KMZ: {output_path}")
+
+    # --- Build authorized points array (lat, lon) ---
+    authorized_points = np.column_stack((
+        lats[admissible_indices[0]],
+        lons[admissible_indices[1]]
+    ))  # shape (N, 2)
+
+    # --- Round to 0.1° and remove duplicates ---
+    authorized_points_01 = np.round(authorized_points, 1)
+    authorized_points_01 = np.unique(authorized_points_01, axis=0)
+
+    # Re-filter after rounding to ensure points are still on land
+    filtered_points = []
+    for lat, lon in authorized_points_01:
+        i = np.argmin(np.abs(lats - lat))
+        j = np.argmin(np.abs(lons - lon))
+        if mask_inland[i, j]:
+            filtered_points.append([lat, lon])
+
+    authorized_points_01 = np.array(filtered_points, dtype=float).reshape(-1, 2)
+    authorized_points_01 = np.unique(authorized_points_01, axis=0)
+
+    print(f"   ✓ Authorized candidate points after 0.1° rounding: {len(authorized_points_01):,}")
+
+    np.savez("authorized_points_01deg.npz", points=authorized_points_01)
+    print("   ✓ Saved authorized points to authorized_points_01deg.npz")
+
+
+    # Optional sanity print: show first 5 rounded points
+    if len(authorized_points_01) > 0:
+        print("\n   Example candidate locations after 0.1° rounding (first 5):")
+        print("   " + "-" * 45)
+        print(f"   {'Index':<10} {'Latitude':<15} {'Longitude':<15}")
+        print("   " + "-" * 45)
+        for idx in range(min(5, len(authorized_points_01))):
+            lat, lon = authorized_points_01[idx]
+            print(f"   {idx+1:<10} {lat:>14.1f} {lon:>14.1f}")
+        if len(authorized_points_01) > 5:
+            print(f"   ... and {len(authorized_points_01) - 5:,} more rounded candidates")
+        print("   " + "-" * 45)
+
+    # ============================================================
+    # Summary
+    # ============================================================
+    print("\n" + "=" * 70)
+    print("Summary")
+    print("=" * 70)
+    print(f"✓ Terrain grid: {len(lats)} x {len(lons)} = {len(lats)*len(lons):,} points")
+    print(f"✓ Land mask: {land_count:,} admissible points ({land_pct:.1f}%)")
+    print(f"✓ Inland mask: {inland_count:,} admissible points ({inland_pct:.1f}%)")
+    print(f"✓ 50km mask: {within_50km:,} admissible points ({within_pct:.1f}%)")
+    print(f"✓ French territory mask: {french_count:,} admissible points ({french_pct:.1f}%)")
+    print(f"✓ Combined mask: {combined_count:,} admissible points ({combined_pct:.1f}%)")
+    print(f"✓ Rounded candidates saved: {len(authorized_points_01):,} points -> authorized_points_01deg.npz")
+    print("=" * 70)
+
+
+if __name__ == "__main__":
+    main()
