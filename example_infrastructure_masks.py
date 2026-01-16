@@ -137,8 +137,8 @@ def main():
         except Exception as e:
             print(f"   ✗ Error creating roads mask: {e}")
             mask_roads = None
-    
-        # ============================================================
+
+    # ============================================================
     # 5b. Create buildings exclusion mask
     # ============================================================
     print("\n5b. Creating buildings exclusion mask (NO radar within 1000m of buildings).")
@@ -184,6 +184,25 @@ def main():
     combined_count = np.sum(mask_combined)
     combined_pct = combined_count / mask_combined.size * 100
     print(f"   ✓ Combined mask: {combined_count:,} admissible points ({combined_pct:.1f}%)")
+
+    # Save authorized (admissible) points to NPZ
+    admissible_i, admissible_j = np.where(mask_combined)
+    assert np.all(mask_combined[admissible_i, admissible_j])
+
+
+    authorized_lat = lats[admissible_i]
+    authorized_lon = lons[admissible_j]
+    authorized_z   = Z[admissible_i, admissible_j]
+
+    np.savez(
+        "authorized_points_all_masks.npz",
+        lat=authorized_lat,
+        lon=authorized_lon,
+        z=authorized_z,
+        mask=mask_combined
+    )
+    print("✓ Saved: authorized_points_all_masks.npz")
+
     
     # ============================================================
     # 7. Display statistics
