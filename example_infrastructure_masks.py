@@ -16,6 +16,7 @@ import numpy as np
 from site_location_masks import mask_land, mask_50km, mask_french_territory, combine_masks
 from electrical_stations_masks import mask_electrical_from_json
 from roads_masks import mask_roads_from_geojson  
+from buildings_masks import mask_buildings_from_geojson
 from visualize_site_location_masks import plot_masks_overlay
 from export_site_location_masks_kml import export_masks_to_kmz
 import os
@@ -137,6 +138,31 @@ def main():
             print(f"   ✗ Error creating roads mask: {e}")
             mask_roads = None
     
+        # ============================================================
+    # 5b. Create buildings exclusion mask
+    # ============================================================
+    print("\n5b. Creating buildings exclusion mask (NO radar within 1000m of buildings).")
+    
+    buildings_file = 'buildings.geojson'
+    if not os.path.exists(buildings_file):
+        print(f"   ⚠ Warning: {buildings_file} not found, skipping buildings mask")
+        mask_buildings = None
+    else:
+        try:
+            # True = admissible (farther than 1000m from any building)
+            mask_buildings = mask_buildings_from_geojson(
+                lats, lons,
+                geojson_file=buildings_file,
+                radius_m=1000.0
+            )
+            buildings_count = np.sum(mask_buildings)
+            buildings_pct = buildings_count / mask_buildings.size * 100
+            print(f"   ✓ Buildings exclusion mask: {buildings_count:,} admissible points ({buildings_pct:.1f}%)")
+            print(f"   ✓ Constraint: distance > 1000m from any building")
+        except Exception as e:
+            print(f"   ✗ Error creating buildings mask: {e}")
+            mask_buildings = None
+
     # ============================================================
     # 6. Combine all masks
     # ============================================================
@@ -150,6 +176,9 @@ def main():
         masks_to_combine.append(mask_electrical)
     if mask_roads is not None:
         masks_to_combine.append(mask_roads)
+    if mask_buildings is not None:
+        masks_to_combine.append(mask_buildings)
+
     
     mask_combined = combine_masks(*masks_to_combine)
     combined_count = np.sum(mask_combined)
@@ -172,6 +201,10 @@ def main():
     
     if mask_roads is not None:
         print(f"   {'Roads 2000m (major roads)':<30} {roads_count:>15,} {roads_pct:>14.1f}%")
+
+    if mask_buildings is not None:
+        print(f"   {'Buildings 1000m exclusion':<30} {buildings_count:>15,} {buildings_pct:>14.1f}%")
+
     
     print(f"   {'Combined mask (ALL)':<30} {combined_count:>15,} {combined_pct:>14.1f}%")
     print("   " + "-"*60)
@@ -193,6 +226,10 @@ def main():
     
     if mask_roads is not None:
         masks_dict['Roads 2000m (Major Roads)'] = mask_roads
+
+    if mask_buildings is not None:
+        masks_dict['Buildings >1000m'] = mask_buildings
+
     
     masks_dict['Combined Mask (ALL)'] = mask_combined
     
