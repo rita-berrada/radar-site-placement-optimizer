@@ -1,7 +1,21 @@
 
+"""
+Example Usage: Infrastructure Masks + COASTLINE BUFFER (REQ_03)
+
+This script demonstrates how to use the electrical stations and roads masks
+for radar site location study. It shows how to:
+1. Load terrain data
+2. Create electrical stations masks (REQ_06: 500m proximity)
+3. Create roads proximity masks (REQ_05: 500m proximity)
+4. Combine with other geographical masks (including REQ_03: Coastline > 100m)
+5. Visualize results
+
+This extends Lot 2 - Radar site location study with infrastructure constraints.
+"""
+
 
 import numpy as np
-from site_location_masks import mask_land, mask_50km, mask_french_territory, combine_masks
+from site_location_masks import mask_land, mask_50km, mask_french_territory, combine_masks, mask_coastline_buffer
 from electrical_stations_masks import mask_electrical_from_json
 from roads_masks import mask_roads_from_geojson  
 from visualize_site_location_masks import plot_masks_overlay
@@ -22,14 +36,16 @@ def main():
     """Example usage of electrical stations and roads masks."""
     
     print("="*70)
-    print("Infrastructure Masks - Electrical Stations & Roads & Buildings")
+
+    print("Infrastructure Masks - Electrical Stations & Roads & Seaside Buffer")
+
     print("="*70)
     
     # ============================================================
     # 1. Load terrain data
     # ============================================================
     print("\n1. Loading terrain data...")
-    terrain_file = 'terrain_req01_50km.npz'
+    terrain_file = 'terrain_req01_50km.npz' # ou 'terrain_mat.npz' selon votre projet
     
     try:
         lats, lons, Z = load_terrain_npz(terrain_file)
@@ -75,6 +91,20 @@ def main():
     french_count = np.sum(mask_french_result)
     french_pct = french_count / mask_french_result.size * 100
     print(f"      ✓ French territory mask: {french_count:,} admissible points ({french_pct:.1f}%)")
+
+    # ============================================================
+    # 3b. REQ_03: Seaside Ban (Buffer 100m) - AJOUTÉ ICI
+    # ============================================================
+    print("\n   d) Creating Coastline Buffer mask (REQ_03: > 100m from sea)...")
+    try:
+        mask_seaside_result = mask_coastline_buffer(lats, lons, Z, buffer_m=100.0)
+        seaside_count = np.sum(mask_seaside_result)
+        seaside_pct = seaside_count / mask_seaside_result.size * 100
+        print(f"      ✓ Seaside buffer mask: {seaside_count:,} admissible points ({seaside_pct:.1f}%)")
+        print(f"      (Note: This is stricter than the basic Land mask)")
+    except Exception as e:
+        print(f"      ✗ Error creating coastline buffer: {e}")
+        mask_seaside_result = None
     
     # ============================================================
     # 4. Create electrical stations mask (REQ_06)
@@ -103,7 +133,9 @@ def main():
     # ============================================================
     # 5. Create roads proximity mask
     # ============================================================
-    print("\n5. Creating roads proximity mask (MAJOR ROADS - 500m)...")
+
+    print("\n5. Creating roads proximity mask (MAJOR ROADS ONLY)...")
+
     
     roads_file = 'roads_nice_50km.geojson'
     if not os.path.exists(roads_file):
@@ -111,16 +143,21 @@ def main():
         mask_roads = None
     else:
         try:
+            # MISE A JOUR REQ_05 : 500m au lieu de 2000m
             mask_roads = mask_roads_from_geojson(
                 lats, lons, 
                 geojson_file=roads_file, 
-                max_distance_m=500.0,  # 500m from major road
-                major_roads_only=True   # Only motorways, trunk, primary, secondary, tertiary
+
+                max_distance_m=500.0,   # <-- CHANGÉ à 500m pour REQ_05
+                major_roads_only=True   # Only motorways, trunk, primary, secondary
+
             )
             roads_count = np.sum(mask_roads)
             roads_pct = roads_count / mask_roads.size * 100
             print(f"   ✓ Roads proximity mask: {roads_count:,} admissible points ({roads_pct:.1f}%)")
-            print(f"   ✓ Construction access within 500m of MAJOR roads")
+
+            print(f"   ✓ REQ_05: Construction access within 500m of MAJOR roads")
+
         except Exception as e:
             print(f"   ✗ Error creating roads mask: {e}")
             mask_roads = None
@@ -148,10 +185,9 @@ def main():
             buildings_count = np.sum(mask_buildings)
             buildings_pct = buildings_count / mask_buildings.size * 100
             print(f"   ✓ Buildings exclusion mask: {buildings_count:,} admissible points ({buildings_pct:.1f}%)")
-            print(f"   ✓ Constraint: distance > 1000m from any building")
-        except ImportError:
-            print(f"   ⚠ Info: buildings_masks module not found, skipping (optional)")
-            mask_buildings = None
+
+            print(f"   ✓ REQ_03: distance > 1000m from any dwelling")
+
         except Exception as e:
             print(f"   ⚠ Info: Could not create buildings mask: {e} (optional)")
             mask_buildings = None
@@ -162,9 +198,14 @@ def main():
     print("\n6. Combining all masks...")
     
     # Start with basic geographical masks
+    # NOTE: On inclut mask_seaside_result qui est plus strict que mask_land
     masks_to_combine = [mask_land_result, mask_50km_result, mask_french_result]
     
-    # Add infrastructure masks if available
+    # Add optional masks
+    if mask_seaside_result is not None:
+        masks_to_combine.append(mask_seaside_result)
+        print("   -> Adding Seaside Buffer constraint")
+
     if mask_electrical is not None:
         masks_to_combine.append(mask_electrical)
     if mask_roads is not None:
@@ -180,6 +221,8 @@ def main():
     # Save authorized (admissible) points to NPZ
     print("\n   Saving authorized points...")
     admissible_i, admissible_j = np.where(mask_combined)
+
+    
     authorized_lat = lats[admissible_i]
     authorized_lon = lons[admissible_j]
     authorized_z = Z[admissible_i, admissible_j]
@@ -198,22 +241,28 @@ def main():
     # ============================================================
     print("\n7. Mask Statistics:")
     print("   " + "-"*60)
-    print(f"   {'Mask':<30} {'Admissible Points':<20} {'Percentage':<15}")
+    print(f"   {'Mask':<35} {'Admissible Points':<20} {'Percentage':<15}")
     print("   " + "-"*60)
-    print(f"   {'Land mask':<30} {land_count:>15,} {land_pct:>14.1f}%")
-    print(f"   {'50km distance mask':<30} {within_50km:>15,} {within_pct:>14.1f}%")
-    print(f"   {'French territory mask':<30} {french_count:>15,} {french_pct:>14.1f}%")
+    print(f"   {'Land mask':<35} {land_count:>15,} {land_pct:>14.1f}%")
+    print(f"   {'50km distance mask':<35} {within_50km:>15,} {within_pct:>14.1f}%")
+    print(f"   {'French territory mask':<35} {french_count:>15,} {french_pct:>14.1f}%")
     
+    if mask_seaside_result is not None:
+        print(f"   {'Seaside Buffer (>100m)':<35} {seaside_count:>15,} {seaside_pct:>14.1f}%")
+
     if mask_electrical is not None:
-        print(f"   {'Electrical 500m (REQ_06)':<30} {electrical_count:>15,} {electrical_pct:>14.1f}%")
+        print(f"   {'Electrical 500m (REQ_06)':<35} {electrical_count:>15,} {electrical_pct:>14.1f}%")
     
     if mask_roads is not None:
-        print(f"   {'Roads 500m (major roads)':<30} {roads_count:>15,} {roads_pct:>14.1f}%")
+
+        print(f"   {'Roads 500m (major roads)':<35} {roads_count:>15,} {roads_pct:>14.1f}%")
 
     if mask_buildings is not None:
-        print(f"   {'Buildings >1000m exclusion':<30} {buildings_count:>15,} {buildings_pct:>14.1f}%")
+        print(f"   {'Buildings 1000m exclusion':<35} {buildings_count:>15,} {buildings_pct:>14.1f}%")
+
+
     
-    print(f"   {'Combined mask (ALL)':<30} {combined_count:>15,} {combined_pct:>14.1f}%")
+    print(f"   {'Combined mask (ALL)':<35} {combined_count:>15,} {combined_pct:>14.1f}%")
     print("   " + "-"*60)
     
     # ============================================================
@@ -228,6 +277,9 @@ def main():
         'French Territory Mask': mask_french_result,
     }
     
+    if mask_seaside_result is not None:
+        masks_dict['Seaside Buffer >100m'] = mask_seaside_result
+
     if mask_electrical is not None:
         masks_dict['Electrical 500m (REQ_06)'] = mask_electrical
     
@@ -290,18 +342,16 @@ def main():
         traceback.print_exc()
     
     # ============================================================
-    # 10. Example: Finding optimal candidate sites
+    # 10. Finding optimal candidate sites (Example)
     # ============================================================
     print("\n10. Finding optimal candidate sites...")
     
-    # Find admissible grid points
     admissible_indices = np.where(mask_combined)
     n_candidates = len(admissible_indices[0])
     
     print(f"   ✓ Found {n_candidates:,} admissible grid points")
     
     if n_candidates > 0:
-        # Show example candidate locations
         print("\n   Example optimal candidate locations (first 5):")
         print("   " + "-"*60)
         print(f"   {'Index':<10} {'Latitude':<15} {'Longitude':<15} {'Elevation (m)':<15}")
@@ -326,37 +376,21 @@ def main():
     print("Summary")
     print("="*70)
     print(f"✓ Terrain grid: {len(lats)} x {len(lons)} = {len(lats)*len(lons):,} points")
-    print(f"✓ Land mask: {land_count:,} admissible points ({land_pct:.1f}%)")
-    print(f"✓ 50km mask: {within_50km:,} admissible points ({within_pct:.1f}%)")
-    print(f"✓ French territory mask: {french_count:,} admissible points ({french_pct:.1f}%)")
-    
-    if mask_electrical is not None:
-        print(f"✓ Electrical 500m : {electrical_count:,} admissible points ({electrical_pct:.1f}%)")
-    
-    if mask_roads is not None:
-        print(f"✓ Roads 500m : {roads_count:,} admissible points ({roads_pct:.1f}%)")
-    
-    if mask_buildings is not None:
-        print(f"✓ Buildings >1000m exclusion: {buildings_count:,} admissible points ({buildings_pct:.1f}%)")
-    
+
     print(f"✓ Combined mask (ALL): {combined_count:,} admissible points ({combined_pct:.1f}%)")
     
-    print("\n✓ Infrastructure constraints implemented:")
-    print("  - REQ_06: Electrical access < 500m from Enedis stations")
-    print("  - Construction access < 500m from MAJOR road network (motorway/trunk/primary/secondary/tertiary)")
-    if mask_buildings is not None:
-        print("  - Building exclusion: distance > 1000m from any building")
-    print("  - Combined with geographical constraints (land, distance, territory)")
-    
-    print("\nNext steps:")
-    print("  - Select candidate radar sites from admissible area")
-    print("  - Run coverage analysis from each candidate")
-    print("  - Evaluate cost-benefit for each site")
+    print("\n✓ Constraints implemented:")
+    print("  - REQ_01: 50km radius")
+    print("  - REQ_03: Seaside buffer > 100m & Buildings > 1000m")
+    print("  - REQ_05: Roads < 500m (updated from 2000m)")
+    print("  - REQ_06: Electrical < 500m")
+    print("  - REQ_07: French Territory")
     
     print("\nOutput files:")
-    print("  - infrastructure_masks_overlay.png: PNG visualization")
-    print("  - infrastructure_masks.kmz: Google Earth visualization (3D interactive)")
-    print("  - authorized_points_all_masks.npz: Authorized candidate points")
+    print("  - infrastructure_masks_overlay.png")
+    print("  - infrastructure_masks.kmz")
+    print("  - authorized_points_all_masks.npz")
+
     print("="*70 + "\n")
 
 

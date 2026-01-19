@@ -1,100 +1,95 @@
-#!/usr/bin/env python3
 """
-Export authorized radar site points (from NPZ) to a Google Earth KMZ file.
+export_authorized_points.py
 
-- No external dependencies.
-- Writes a KMZ (ZIP) containing a 'doc.kml' file, which Google Earth opens directly.
-- Includes optional sub-sampling to avoid Google Earth lag with too many points.
-
-Input:
-  authorized_points_all_masks.npz  (expects arrays: lat, lon, and optionally z)
-
-Output:
-  authorized_points_all_masks_POINTS.kmz
+Exports the final candidate sites from 'authorized_points_all_masks.npz'
+to a Google Earth KMZ file as green placemarks.
 """
 
-import io
-import zipfile
 import numpy as np
+import zipfile
+import os
 
+# Configuration
+INPUT_FILE = "authorized_points_all_masks.npz"
+OUTPUT_KMZ = "final_candidates.kmz"
+MAX_POINTS_DISPLAY = 5000  # Safety limit to prevent Google Earth crash
 
-def export_points_kmz(
-    npz_file: str,
-    kmz_file: str,
-    max_points: int = 10000,
-    name: str = "Authorized points (ALL masks)",
-    icon_href: str = "http://maps.google.com/mapfiles/kml/paddle/red-circle.png",
-    icon_scale: float = 0.6,
-):
-    data = np.load(npz_file)
-    lat = data["lat"]
-    lon = data["lon"]
-    z = data["z"] if "z" in data.files else None
+def export_candidates():
+    print(f"Exporting candidates from {INPUT_FILE}...")
 
-    n = len(lat)
-    if n == 0:
-        raise RuntimeError(f"No points found in {npz_file} (lat/lon arrays are empty).")
+    if not os.path.exists(INPUT_FILE):
+        print(f"Error: {INPUT_FILE} not found. Run the masks script first.")
+        return
 
-    # Subsample to keep Google Earth responsive
-    step = max(1, n // max_points) if max_points and max_points > 0 else 1
-    lat_s = lat[::step]
-    lon_s = lon[::step]
-    z_s = z[::step] if z is not None else None
+    # 1. Load Data
+    data = np.load(INPUT_FILE)
+    lats = data['lat']
+    lons = data['lon']
+    # Elevation might be needed for 'absolute' altitude mode, 
+    # but 'clampToGround' is safer for visualization.
+    
+    num_points = len(lats)
+    print(f"   Total authorized points found: {num_points:,}")
 
-    # Build KML content in memory
-    kml = io.StringIO()
-    kml.write('<?xml version="1.0" encoding="UTF-8"?>\n')
-    kml.write('<kml xmlns="http://www.opengis.net/kml/2.2">\n')
-    kml.write("  <Document>\n")
-    kml.write(f"    <name>{name}</name>\n")
+    if num_points == 0:
+        print("   No candidates to export.")
+        return
 
-    # A simple style for points
-    kml.write('    <Style id="pt">\n')
-    kml.write("      <IconStyle>\n")
-    kml.write(f"        <scale>{float(icon_scale):.2f}</scale>\n")
-    kml.write("        <Icon>\n")
-    kml.write(f"          <href>{icon_href}</href>\n")
-    kml.write("        </Icon>\n")
-    kml.write("      </IconStyle>\n")
-    kml.write("    </Style>\n")
+    # 2. Subsampling (Safety check)
+    step = 1
+    if num_points > MAX_POINTS_DISPLAY:
+        step = int(np.ceil(num_points / MAX_POINTS_DISPLAY))
+        print(f"   [!] Too many points for Google Earth. Displaying 1 out of {step} points.")
+    
+    lats_viz = lats[::step]
+    lons_viz = lons[::step]
 
-    # Write points
-    for i in range(len(lat_s)):
-        kml.write("    <Placemark>\n")
-        kml.write("      <styleUrl>#pt</styleUrl>\n")
-        kml.write(f"      <name>Pt {i+1}</name>\n")
-        if z_s is not None:
-            kml.write(
-                "      <Point><coordinates>{:.8f},{:.8f},{:.2f}</coordinates></Point>\n".format(
-                    float(lon_s[i]), float(lat_s[i]), float(z_s[i])
-                )
-            )
-        else:
-            kml.write(
-                "      <Point><coordinates>{:.8f},{:.8f},0</coordinates></Point>\n".format(
-                    float(lon_s[i]), float(lat_s[i])
-                )
-            )
-        kml.write("    </Placemark>\n")
+    # 3. Generate KML Content
+    # We use a simple Green Pushpin style
+    kml_header = """<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+  <Document>
+    <name>Authorized Radar Sites</name>
+    <Style id="greenPin">
+      <IconStyle>
+        <color>ff00ff00</color> <scale>1.1</scale>
+        <Icon>
+          <href>http://maps.google.com/mapfiles/kml/pushpin/grn-pushpin.png</href>
+        </Icon>
+      </IconStyle>
+    </Style>
+    <Folder>
+      <name>Candidates</name>
+"""
+    
+    kml_footer = """    </Folder>
+  </Document>
+</kml>"""
 
-    kml.write("  </Document>\n")
-    kml.write("</kml>\n")
+    kml_body = ""
+    for i in range(len(lats_viz)):
+        lat = lats_viz[i]
+        lon = lons_viz[i]
+        
+        # Create a placemark for each point
+        kml_body += f"""
+      <Placemark>
+        <styleUrl>#greenPin</styleUrl>
+        <Point>
+          <altitudeMode>clampToGround</altitudeMode>
+          <coordinates>{lon},{lat},0</coordinates>
+        </Point>
+      </Placemark>"""
 
-    # Write KMZ (ZIP) with doc.kml inside
-    with zipfile.ZipFile(kmz_file, "w", zipfile.ZIP_DEFLATED) as zf:
-        zf.writestr("doc.kml", kml.getvalue())
+    # 4. Write and Zip
+    with open("doc.kml", "w") as f:
+        f.write(kml_header + kml_body + kml_footer)
 
-    print(f"✓ Loaded {n:,} points from {npz_file}")
-    print(f"✓ Exported {len(lat_s):,} points to {kmz_file} (subsample step={step})")
+    with zipfile.ZipFile(OUTPUT_KMZ, "w", zipfile.ZIP_DEFLATED) as z:
+        z.write("doc.kml")
 
-
-def main():
-    export_points_kmz(
-        npz_file="authorized_points_all_masks.npz",
-        kmz_file="authorized_points_all_masks_POINTS.kmz",
-        max_points=5000,  # Try 5000 if Google Earth still lags
-    )
-
+    os.remove("doc.kml")
+    print(f"Success: {OUTPUT_KMZ} created with {len(lats_viz)} points.")
 
 if __name__ == "__main__":
-    main()
+    export_candidates()

@@ -12,6 +12,7 @@ The masks are designed to be:
 """
 
 import numpy as np
+from scipy.ndimage import distance_transform_edt  # Nouvel import pour le calcul de distance
 
 
 def haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -78,6 +79,57 @@ def mask_land(lats: np.ndarray, lons: np.ndarray, Z: np.ndarray) -> np.ndarray:
     # True where elevation > 0 (land), False where elevation <= 0 (sea)
     mask = Z > 0.0
     return mask
+
+
+def mask_coastline_buffer(lats: np.ndarray, lons: np.ndarray, Z: np.ndarray, buffer_m: float = 100.0) -> np.ndarray:
+    """
+    Create a mask excluding the seaside buffer zone (REQ_03).
+    
+    Identifies land points that are at least 'buffer_m' meters away from the sea.
+    Uses Euclidean Distance Transform for accurate proximity calculation.
+    
+    Parameters:
+    -----------
+    lats : np.ndarray
+        1D array of latitude values (degrees).
+    lons : np.ndarray
+        1D array of longitude values (degrees).
+    Z : np.ndarray
+        2D array of terrain elevation (meters).
+    buffer_m : float
+        Minimum distance from the sea in meters (default: 100.0).
+        
+    Returns:
+    --------
+    np.ndarray
+        Boolean mask (True = Admissible/Inland, False = Too close to sea/Offshore).
+    """
+    # 1. Base Land Mask (True=Land, False=Sea)
+    land_mask = Z > 0
+    
+    # 2. Compute local grid resolution (meters per pixel)
+    # 1 deg lat approx 111,132 m
+    # 1 deg lon approx 111,412 * cos(lat) m
+    lat_mean = np.mean(lats)
+    meters_per_deg_lat = 111132.0
+    meters_per_deg_lon = 111412.0 * np.cos(np.radians(lat_mean))
+    
+    # Average step in degrees
+    dlat = np.mean(np.abs(np.diff(lats)))
+    dlon = np.mean(np.abs(np.diff(lons)))
+    
+    # Pixel size in meters
+    res_y = dlat * meters_per_deg_lat
+    res_x = dlon * meters_per_deg_lon
+    mean_resolution = (res_y + res_x) / 2.0
+    
+    # 3. Compute distance from Sea (Distance Transform)
+    # Computes Euclidean distance to the nearest zero (Sea) for each non-zero pixel (Land)
+    dist_in_pixels = distance_transform_edt(land_mask)
+    dist_in_meters = dist_in_pixels * mean_resolution
+    
+    # 4. Apply Buffer Threshold
+    return dist_in_meters > buffer_m
 
 
 def mask_50km(lats: np.ndarray, lons: np.ndarray, 
