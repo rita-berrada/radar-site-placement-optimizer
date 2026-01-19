@@ -26,31 +26,51 @@ def coverage_rates_one_radar_full_grid(
     lons: np.ndarray,
     Z: np.ndarray,
     n_samples: int = 800,
-    margin_m: float = 0.0
+    margin_m: float = 0.0,
+    cand_idx: int = 1,
+    cand_total: int = 1,
+    show_fl_progress: bool = True
 ) -> Dict[float, float]:
     """
     FULL GRID coverage rates for one radar.
+    Prints progress % INSIDE each FL computation using point_progress_callback.
     Returns {FL: coverage_pct}.
     """
     cov_pct: Dict[float, float] = {}
 
     for fl in flight_levels:
-        print(f"  → Computing FL{int(fl)}...", end="", flush=True)
+        fl = float(fl)
+
+        # ---- progress callback inside FL ----
+        def progress(k, total, pct, _fl=fl, _ci=cand_idx, _ct=cand_total):
+            # Example: [3/120] FL10  45.7% (123,456/270,000)
+            print(
+                f"[{_ci}/{_ct}] FL{int(_fl):3d}  {pct:5.1f}%  ({k:,}/{total:,})",
+                end="\r",
+                flush=True
+            )
+
+        print(f"\n→ Candidate {cand_idx}/{cand_total} : computing FL{int(fl)} ...")
 
         cmap = compute_coverage_full_grid_np(
             radar_lat, radar_lon, radar_height_agl_m,
-            float(fl),
+            fl,
             lats, lons, Z,
             n_samples=n_samples,
             margin_m=margin_m,
-            point_progress_callback=None
+            point_progress_callback=progress if show_fl_progress else None
         )
 
-        pct = float(cmap.mean() * 100.0)
-        cov_pct[float(fl)] = pct
-        print(f" ✓ {pct:.2f}%")
+        # finish the progress line cleanly
+        if show_fl_progress:
+            print()
+
+        pct_cov = float(cmap.mean() * 100.0)
+        cov_pct[fl] = pct_cov
+        print(f"   ✓ FL{int(fl)} coverage: {pct_cov:.2f}%")
 
     return cov_pct
+
 
 
 def score_from_coverages(
@@ -109,30 +129,40 @@ def rank_candidates_full_grid(
     candidates: List[Tuple[float, float, float]],   # [(lat, lon, h_agl_m), ...]
     flight_levels: List[float],
     terrain_npz_path: str = "terrain_mat.npz",
-    n_samples: int = 200,
-    margin_m: float = 0.0
+    n_samples: int = 800,
+    margin_m: float = 0.0,
+    show_progress: bool = True
 ) -> List[dict]:
     """
     Rank candidate sites by score (desc).
-    Returns list of dicts.
+    FULL GRID. Loads terrain once.
+
+    Progress printed as % of candidates completed.
     """
     results = []
 
-    # load terrain once
+    # Load terrain ONCE
     lats, lons, Z = load_terrain_npz(terrain_npz_path)
 
-    for idx, (lat, lon, h) in enumerate(candidates, start=1):
-        print("\n" + "=" * 60)
-        print(f"Candidate {idx}/{len(candidates)} — lat={lat:.6f}, lon={lon:.6f}, h={h:.1f}m")
-        print("=" * 60)
+    n_cand = len(candidates)
+    if n_cand == 0:
+        return results
 
+    # print about ~100 updates max
+    step = max(1, n_cand // 100)
+
+    for idx, (lat, lon, h) in enumerate(candidates, start=1):
         cov_pct = coverage_rates_one_radar_full_grid(
             float(lat), float(lon), float(h),
             flight_levels,
             lats, lons, Z,
             n_samples=n_samples,
-            margin_m=margin_m
+            margin_m=margin_m,
+            cand_idx=idx,
+            cand_total=len(candidates),
+            show_fl_progress=True
         )
+
         score = score_from_coverages(flight_levels, cov_pct)
 
         results.append({
@@ -143,10 +173,17 @@ def rank_candidates_full_grid(
             "cov_pct": cov_pct
         })
 
-        print(f"\n→ SCORE = {score:.2f}%")
+        # ---- GLOBAL PROGRESS ----
+        if show_progress and (idx % step == 0 or idx == n_cand):
+            pct = 100.0 * idx / n_cand
+            print(f"Progress: {idx:,}/{n_cand:,} candidates ({pct:.1f}%)", end="\r", flush=True)
+
+    if show_progress:
+        print()  # newline after progress bar
 
     results.sort(key=lambda d: d["score"], reverse=True)
     return results
+
 
 
 # =========================

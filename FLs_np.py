@@ -31,7 +31,7 @@ def compute_coverage_full_grid_np(
     lats: np.ndarray,
     lons: np.ndarray,
     Z: np.ndarray,
-    n_samples: int = 400,
+    n_samples: int = 200,
     margin_m: float = 0.0,
     point_progress_callback=None
 ) -> np.ndarray:

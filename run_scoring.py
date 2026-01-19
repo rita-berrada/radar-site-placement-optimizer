@@ -23,8 +23,8 @@ def main():
     flight_levels = [5, 10, 20, 50, 100, 200, 300, 400]
 
     # Simulation precision
-    n_samples = 200   # Number of sample points along each ray
-    margin_m = 1.0    # Safety margin for LOS
+    n_samples = 100   # Number of sample points along each ray
+    margin_m = 0.0    # Safety margin for LOS
 
     # -----------------------------
     # 2. Load Authorized Candidates
@@ -58,12 +58,14 @@ def main():
     print(f"\n--- Scoring {K} candidates (Full Grid Method) ---")
     
     ranked_results = rank_candidates_full_grid(
-        candidates=candidates_list,
-        flight_levels=flight_levels,
-        terrain_npz_path=terrain_file,
-        n_samples=n_samples,
-        margin_m=margin_m
-    )
+    candidates=candidates_list,
+    flight_levels=flight_levels,
+    terrain_npz_path=terrain_file,
+    n_samples=n_samples,
+    margin_m=margin_m,
+    show_progress=True
+)
+
 
     # -----------------------------------
     # 4. Display Top 10
