@@ -84,7 +84,7 @@ def score_one_radar_full_grid(
     radar_height_agl_m: float,
     flight_levels: List[float],
     terrain_npz_path: str = "terrain_mat.npz",
-    n_samples: int = 800,
+    n_samples: int = 200,
     margin_m: float = 0.0
 ) -> Tuple[float, Dict[float, float]]:
     """
@@ -109,7 +109,7 @@ def rank_candidates_full_grid(
     candidates: List[Tuple[float, float, float]],   # [(lat, lon, h_agl_m), ...]
     flight_levels: List[float],
     terrain_npz_path: str = "terrain_mat.npz",
-    n_samples: int = 800,
+    n_samples: int = 200,
     margin_m: float = 0.0
 ) -> List[dict]:
     """
@@ -164,7 +164,7 @@ if __name__ == "__main__":
         candidates,
         flight_levels=flight_levels,
         terrain_npz_path="terrain_mat.npz",
-        n_samples=800,
+        n_samples=200,
         margin_m=0.0
     )
 

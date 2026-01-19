@@ -83,7 +83,7 @@ def run_all_fls_full_grid():
 
     flight_levels = [5, 10, 20, 50, 100, 200, 300, 400]
 
-    n_samples = 800
+    n_samples = 200
     margin_m = 0.0
 
     # ---------------- Load terrain ----------------
