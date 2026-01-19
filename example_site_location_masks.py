@@ -19,7 +19,7 @@ from scipy.ndimage import binary_dilation
 
 from visualize_terrain import load_terrain_npz
 from site_location_masks import mask_land, mask_50km, mask_french_territory, combine_masks
-from visualize_site_location_masks import plot_masks_overlay
+#from visualize_site_location_masks import plot_masks_overlay
 from export_site_location_masks_kml import export_masks_to_kmz
 
 
@@ -147,35 +147,6 @@ def main():
         "Combined Mask": mask_combined,
     }
 
-    try:
-        # For faster visualization, use a subset if grid is very large
-        if len(lats) * len(lons) > 500000:
-            print("   (Using subset for faster visualization)")
-            step = max(1, len(lats) // 300)
-            lats_viz = lats[::step]
-            lons_viz = lons[::step]
-            Z_viz = Z[::step, ::step]
-            masks_viz = {name: mask[::step, ::step] for name, mask in masks_dict.items()}
-        else:
-            lats_viz = lats
-            lons_viz = lons
-            Z_viz = Z
-            masks_viz = masks_dict
-
-        plot_masks_overlay(
-            lats_viz,
-            lons_viz,
-            Z_viz,
-            masks_viz,
-            nice_lat,
-            nice_lon,
-            save_path="site_location_masks_overlay.png",
-        )
-        print("   ✓ PNG visualization saved (admissible=transparent, excluded=grey overlay)")
-    except Exception as e:
-        print(f"   ✗ Error in PNG visualization: {e}")
-        import traceback
-        traceback.print_exc()
 
     # ============================================================
     # 7. Export to Google Earth (KMZ)
@@ -218,7 +189,16 @@ def main():
     n_candidates = len(admissible_indices[0])
     print(f"   ✓ Found {n_candidates:,} admissible grid points")
 
-    
+    # ------------------------------------------------------------
+    # Authorized points WITHOUT rounding (full-resolution grid)
+    authorized_points_full = np.column_stack((
+        lats[admissible_indices[0]],
+        lons[admissible_indices[1]]
+    ))
+
+    np.savez("authorized_points_full.npz", points=authorized_points_full)
+    print(f" ✓ Saved full-resolution authorized points: {len(authorized_points_full):,} points")
+
 
     # --- Build authorized points array (lat, lon) ---
     authorized_points = np.column_stack((
