@@ -6,8 +6,9 @@ It combines:
 1. Geography (Land, 50km, France, Coastline Buffer > 100m)
 2. Terrain (Slope <= 15%)
 3. Infrastructure (Electricity < 500m, Roads < 500m, Buildings > 1000m)
-4. Environment (Protected Areas exclusion)
-5. RADAR PERFORMANCE (Line of Sight to Nice Airport) <- FINAL FILTER
+4. Residential Areas (Exclusion from export.geojson) <--- NEW
+5. Environment (Protected Areas exclusion)
+6. RADAR PERFORMANCE (Line of Sight to Nice Airport) <- FINAL FILTER
 """
 
 import numpy as np
@@ -21,7 +22,10 @@ from mask_slope import mask_slope
 from electrical_stations_masks import mask_electrical_from_json
 from roads_masks import mask_roads_from_geojson  
 from buildings_masks import mask_buildings_from_geojson
-from protected_areas_mask import mask_protected_areas_from_geojson
+from mask_residential import mask_residential_from_geojson # <--- NOUVEL IMPORT
+
+# Environmental Modules
+from protected_areas_masks import mask_protected_areas_from_geojson
 
 # Radar Logic Module (The Final Check)
 from mask_see_airport import check_visibility_batch
@@ -36,7 +40,7 @@ def load_terrain_npz(npz_file: str):
 
 def main():
     print("="*70)
-    print("FINAL SITE SELECTION - ALL CONSTRAINTS + LINE OF SIGHT")
+    print("FINAL SITE SELECTION - ALL CONSTRAINTS + RESIDENTIAL + LOS")
     print("="*70)
     
     # ---------------------------------------------------------
@@ -79,9 +83,9 @@ def main():
     m_slope = mask_slope(terrain_file, max_slope_percent=15.0)
 
     # ---------------------------------------------------------
-    # 4. INFRASTRUCTURE MASKS
+    # 4. INFRASTRUCTURE & RESIDENTIAL MASKS
     # ---------------------------------------------------------
-    print("\n4. Computing Infrastructure Masks...")
+    print("\n4. Computing Infrastructure & Residential Masks...")
 
     # REQ_06: Electricity < 500m
     elec_file = 'page1.json'
@@ -101,7 +105,7 @@ def main():
     else:
         print(f"   [!] Missing {roads_file}, skipping roads mask.")
 
-    # REQ_02/03: Buildings > 1000m
+    # REQ_02: Buildings > 1000m
     build_file = 'buildings.geojson'
     m_build = None
     if os.path.exists(build_file):
@@ -109,6 +113,15 @@ def main():
         m_build = mask_buildings_from_geojson(lats, lons, build_file, radius_m=1000.0)
     else:
         print(f"   [!] Missing {build_file}, skipping buildings mask.")
+
+    # NOUVEAU : Residential Areas (export.geojson)
+    res_file = 'export.geojson'
+    m_res = None
+    if os.path.exists(res_file):
+        print(f"   -> Residential Areas Exclusion ({res_file})")
+        m_res = mask_residential_from_geojson(lats, lons, res_file)
+    else:
+        print(f"   [!] Missing {res_file}, skipping residential mask.")
 
     # ---------------------------------------------------------
     # 5. ENVIRONMENTAL MASKS
@@ -150,6 +163,11 @@ def main():
     if m_build is not None:
         masks_list.append(m_build)
         masks_dict['Buildings (>1000m)'] = m_build
+
+    # Ajout Résidentiel
+    if m_res is not None:
+        masks_list.append(m_res)
+        masks_dict['Residential Areas'] = m_res
         
     if m_prot is not None:
         masks_list.append(m_prot)
@@ -178,7 +196,8 @@ def main():
             lats, lons, Z, 
             cand_indices, 
             nice_lat, nice_lon, 
-            radar_height_m=20.0
+            radar_height_m=20.0,
+            target_height_m=10.0
         )
         
         # Create final mask
