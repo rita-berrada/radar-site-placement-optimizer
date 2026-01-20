@@ -14,7 +14,7 @@ import numpy as np
 from typing import Dict, List, Tuple
 
 from visualize_terrain import load_terrain_npz
-from FLs_np import compute_coverage_full_grid_np
+from FLs_numba import compute_coverage_full_grid_np
 
 
 def coverage_rates_one_radar_full_grid(
@@ -25,7 +25,7 @@ def coverage_rates_one_radar_full_grid(
     lats: np.ndarray,
     lons: np.ndarray,
     Z: np.ndarray,
-    n_samples: int = 800,
+    n_samples: int = 50,
     margin_m: float = 0.0,
     cand_idx: int = 1,
     cand_total: int = 1,
