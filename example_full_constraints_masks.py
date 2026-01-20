@@ -5,8 +5,8 @@ This script generates the final 'authorized_points_all_masks.npz'.
 It combines:
 1. Geography (Land, 50km, France, Coastline Buffer > 100m)
 2. Terrain (Slope <= 15%)
-3. Infrastructure (Electricity < 500m, Roads < 500m)
-4. Habitation Exclusion (Optimized Zones + Safety Buffer) <--- MODIFIED
+3. Infrastructure (Electricity < 500m, Roads < 500m, Buildings > 1000m)
+4. Residential Areas (Exclusion from export.geojson) <--- NEW
 5. Environment (Protected Areas exclusion)
 6. RADAR PERFORMANCE (Line of Sight to Nice Airport) <- FINAL FILTER
 """
@@ -21,8 +21,8 @@ from mask_slope import mask_slope
 # Infrastructure Modules
 from electrical_stations_masks import mask_electrical_from_json
 from roads_masks import mask_roads_from_geojson  
-# On utilise le masque 'buildings' car il gère le rayon de sécurité (buffer)
-from buildings_masks import mask_buildings_from_geojson 
+from buildings_masks import mask_buildings_from_geojson
+from mask_residential import mask_residential_from_geojson # <--- NOUVEL IMPORT
 
 # Environmental Modules
 from protected_areas_mask import mask_protected_areas_from_geojson
@@ -40,7 +40,7 @@ def load_terrain_npz(npz_file: str):
 
 def main():
     print("="*70)
-    print("FINAL SITE SELECTION - OPTIMIZED ZONES + LOS")
+    print("FINAL SITE SELECTION - ALL CONSTRAINTS + RESIDENTIAL + LOS")
     print("="*70)
     
     # ---------------------------------------------------------
@@ -83,9 +83,9 @@ def main():
     m_slope = mask_slope(terrain_file, max_slope_percent=15.0)
 
     # ---------------------------------------------------------
-    # 4. INFRASTRUCTURE & HABITATION (OPTIMIZED)
+    # 4. INFRASTRUCTURE & RESIDENTIAL MASKS
     # ---------------------------------------------------------
-    print("\n4. Computing Infrastructure & Habitation Masks...")
+    print("\n4. Computing Infrastructure & Residential Masks...")
 
     # REQ_06: Electricity < 500m
     elec_file = 'page1.json'
@@ -105,26 +105,23 @@ def main():
     else:
         print(f"   [!] Missing {roads_file}, skipping roads mask.")
 
-    # --- ZONES INTERDITES FUSIONNÉES (Résidentiel + Bâtiments) ---
-    forbidden_file = 'forbidden_zones_optimized.geojson'
-    m_forbidden = None
-    
-    if os.path.exists(forbidden_file):
-        # PARAMÈTRE CRITIQUE : LE RAYON DE SÉCURITÉ
-        # 300m est un bon compromis pour éviter les nuisances sans tout bloquer.
-        # Si vous avez 0 candidat, baissez à 150m ou 200m.
-        safety_radius = 300.0 
-        
-        print(f"   -> Forbidden Zones Exclusion (Source: {forbidden_file})")
-        print(f"      Applying safety buffer of {safety_radius}m around zones...")
-        
-        m_forbidden = mask_buildings_from_geojson(
-            lats, lons, 
-            forbidden_file, 
-            radius_m=safety_radius
-        )
+    # REQ_02: Buildings > 1000m
+    build_file = 'buildings.geojson'
+    m_build = None
+    if os.path.exists(build_file):
+        print("   -> Buildings Exclusion (> 1000m)")
+        m_build = mask_buildings_from_geojson(lats, lons, build_file, radius_m=1000.0)
     else:
-        print(f"   [!] Missing {forbidden_file}. PLEASE RUN optimize_zones.py FIRST!")
+        print(f"   [!] Missing {build_file}, skipping buildings mask.")
+
+    # NOUVEAU : Residential Areas (export.geojson)
+    res_file = 'export.geojson'
+    m_res = None
+    if os.path.exists(res_file):
+        print(f"   -> Residential Areas Exclusion ({res_file})")
+        m_res = mask_residential_from_geojson(lats, lons, res_file)
+    else:
+        print(f"   [!] Missing {res_file}, skipping residential mask.")
 
     # ---------------------------------------------------------
     # 5. ENVIRONMENTAL MASKS
@@ -163,10 +160,14 @@ def main():
         masks_list.append(m_roads)
         masks_dict['Roads (<500m)'] = m_roads
         
-    if m_forbidden is not None:
-        masks_list.append(m_forbidden)
-        # On l'appelle Habitation pour la clarté dans Google Earth
-        masks_dict[f'Habitation (>{int(safety_radius)}m)'] = m_forbidden 
+    if m_build is not None:
+        masks_list.append(m_build)
+        masks_dict['Buildings (>1000m)'] = m_build
+
+    # Ajout Résidentiel
+    if m_res is not None:
+        masks_list.append(m_res)
+        masks_dict['Residential Areas'] = m_res
         
     if m_prot is not None:
         masks_list.append(m_prot)
