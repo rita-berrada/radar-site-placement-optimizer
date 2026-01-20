@@ -25,7 +25,7 @@ from buildings_masks import mask_buildings_from_geojson
 from mask_residential import mask_residential_from_geojson # <--- NOUVEL IMPORT
 
 # Environmental Modules
-from protected_areas_masks import mask_protected_areas_from_geojson
+from protected_areas_mask import mask_protected_areas_from_geojson
 
 # Radar Logic Module (The Final Check)
 from mask_see_airport import check_visibility_batch
