@@ -9,7 +9,7 @@ def main():
     # -----------------------------
     # 1) Load authorized candidates
     # -----------------------------
-    data = np.load("authorized_points_01deg.npz")
+    data = np.load("authorized_points_all_masks.npz")
     points = data["points"]  # shape (N, 2) with [lat, lon]
     n_points = len(points)
 
@@ -70,8 +70,8 @@ def main():
     scores_arr = np.array([(s, lat, lon) for (s, lat, lon, _) in results], dtype=float)
     cov_arr = np.array([cov for (_, _, _, cov) in results], dtype=object)
 
-    np.savez("scored_candidates_01deg_weighted.npz", scores_latlon=scores_arr, cov_by_fl=cov_arr)
-    print("\n✓ Saved results to scored_candidates_01deg_weighted.npz")
+    np.savez("scored_candidates_weighted.npz", scores_latlon=scores_arr, cov_by_fl=cov_arr)
+    print("\n✓ Saved results to scored_candidates_weighted.npz")
 
 
 if __name__ == "__main__":
