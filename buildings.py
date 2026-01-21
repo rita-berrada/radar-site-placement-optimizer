@@ -10,7 +10,7 @@ INSTRUCTIONS FOR EVERYONE:
 
 2. Put these files IN THIS FOLDER:
    - terrain_req01_50km.npz   (preferred DTED extract)  OR  terrain_mat.npz
-   - buildings.geojson        (building points)
+   - geographical_data/buildings.geojson        (building points)
    - buildings.py             (this file)
 
 3. Run:
@@ -64,8 +64,11 @@ for cand in terrain_candidates:
         terrain_file = cand
         break
 
+# Check for buildings.geojson in geographical_data folder
+buildings_path = 'geographical_data/buildings.geojson'
+
 required_files = {
-    'buildings.geojson': 'Buildings data (GeoJSON Points)'
+    buildings_path: 'Buildings data (GeoJSON Points)'
 }
 
 missing_files = []
@@ -85,7 +88,8 @@ if missing_files:
         print(m)
     print("\n✅ Fix:")
     print("   1. Put the missing files in this folder")
-    print("   2. Re-run the script")
+    print("   2. Make sure buildings.geojson is in geographical_data/ subfolder")
+    print("   3. Re-run the script")
     sys.exit(1)
 
 print(f"   ✅ {terrain_file} (Terrain file DTED)")
@@ -126,14 +130,16 @@ try:
     buildings = []
 
     if gpd is not None:
-        gdf = gpd.read_file('buildings.geojson')
+        print("   Using geopandas for faster loading...")
+        gdf = gpd.read_file(buildings_path)
         gdf = gdf[gdf.geometry.type == 'Point']
         xs = gdf.geometry.x.to_numpy(dtype=float)
         ys = gdf.geometry.y.to_numpy(dtype=float)
         for lat, lon in zip(ys, xs):
             buildings.append({'lat': float(lat), 'lon': float(lon)})
     else:
-        with open('buildings.geojson', 'r', encoding='utf-8') as f:
+        print("   Using json for loading (slower but works without geopandas)...")
+        with open(buildings_path, 'r', encoding='utf-8') as f:
             data = json.load(f)
         for feat in data.get('features', []):
             geom = feat.get('geometry', {})
@@ -149,6 +155,7 @@ try:
 
 except Exception as e:
     print(f"❌ Buildings reading error: {e}")
+    print(f"   Make sure {buildings_path} exists and is valid GeoJSON")
     sys.exit(1)
 
 # ============================================================================
@@ -216,7 +223,7 @@ for i, b in enumerate(buildings_for_circles):
                         radius_deg_lon,
                         fill=False, edgecolor='yellow', linestyle='--',
                         linewidth=1, alpha=0.25,
-                        label='1 km Radius (REQ_buildings)', zorder=8)
+                        label='1 km Radius (buildings)', zorder=8)
     else:
         circle = Circle((b['lon'], b['lat']),
                         radius_deg_lon,
@@ -237,6 +244,7 @@ plt.tight_layout()
 output_full = 'buildings_map.png'
 plt.savefig(output_full, dpi=200, bbox_inches='tight')
 print(f"✅ Saved: {output_full}")
+plt.close()
 
 # ============================================================================
 # ZOOM MAP (10 KM AROUND AIRPORT)
@@ -281,27 +289,30 @@ plt.scatter([NICE_AIRPORT_LON], [NICE_AIRPORT_LAT],
             linewidth=1.5, label='Nice Airport', zorder=10)
 
 # Buildings nearby
-near_lon = np.array([b['lon'] for b in nearby], dtype=float)
-near_lat = np.array([b['lat'] for b in nearby], dtype=float)
-plt.scatter(near_lon, near_lat, s=10, color='yellow', alpha=0.45,
-            label=f'Buildings (<10 km) ({len(nearby)})', zorder=9)
+if len(nearby) > 0:
+    near_lon = np.array([b['lon'] for b in nearby], dtype=float)
+    near_lat = np.array([b['lat'] for b in nearby], dtype=float)
+    plt.scatter(near_lon, near_lat, s=10, color='yellow', alpha=0.45,
+                label=f'Buildings (<10 km) ({len(nearby)})', zorder=9)
 
-# Circles for all nearby buildings (zoom)
-print("⭕ Adding 1 km circles for zoom buildings...")
-ax = plt.gca()
-for i, b in enumerate(nearby):
-    if i == 0:
-        circle = Circle((b['lon'], b['lat']),
-                        radius_deg_lon,
-                        fill=False, edgecolor='yellow', linestyle='--',
-                        linewidth=1, alpha=0.25,
-                        label='1 km Radius (REQ_buildings)', zorder=8)
-    else:
-        circle = Circle((b['lon'], b['lat']),
-                        radius_deg_lon,
-                        fill=False, edgecolor='yellow', linestyle='--',
-                        linewidth=1, alpha=0.25, zorder=8)
-    ax.add_patch(circle)
+    # Circles for all nearby buildings (zoom)
+    print("⭕ Adding 1 km circles for zoom buildings...")
+    ax = plt.gca()
+    for i, b in enumerate(nearby):
+        if i == 0:
+            circle = Circle((b['lon'], b['lat']),
+                            radius_deg_lon,
+                            fill=False, edgecolor='yellow', linestyle='--',
+                            linewidth=1, alpha=0.25,
+                            label='1 km Radius (REQ_buildings)', zorder=8)
+        else:
+            circle = Circle((b['lon'], b['lat']),
+                            radius_deg_lon,
+                            fill=False, edgecolor='yellow', linestyle='--',
+                            linewidth=1, alpha=0.25, zorder=8)
+        ax.add_patch(circle)
+else:
+    ax = plt.gca()
 
 # Formatting
 plt.xlabel('Longitude (°)', fontsize=14, fontweight='bold')
@@ -328,6 +339,7 @@ plt.tight_layout()
 output_zoom = 'buildings_zoom_10km.png'
 plt.savefig(output_zoom, dpi=200, bbox_inches='tight')
 print(f"✅ Saved: {output_zoom}")
+plt.close()
 
 # ============================================================================
 # SUMMARY
@@ -348,13 +360,13 @@ print(f"      → Full view: {len(buildings_for_circles)} circles < {CIRCLES_MAX
 print(f"      → Zoomed view: {len(nearby)} buildings < 10 km, all with 1 km circle")
 
 print(f"\n💡 Project constraints:")
-print(f"   ✅ REQ: Radar must be > 1 km from habitations (blue circles)")
+print(f"   ✅  Radar must be > 1 km from habitations (yellow circles)")
 print(f"   ✅ {len(buildings)} building points identified")
 
 print("\n🚀 To share with the team:")
 print("   - Send this script (buildings.py)")
 print("   - Send the terrain .npz file")
-print("   - Send buildings.geojson")
+print("   - Send geographical_data/buildings.geojson")
 print("   → Everyone can generate the maps on their computer!")
 
 print("\n" + "=" * 70)
