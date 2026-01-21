@@ -19,7 +19,7 @@ from typing import Dict, List, Tuple
 import numpy as np
 
 from LOS_numba import coverage_map_numba, fl_to_m, normalize_grid
-from visualize_coverage import plot_all_coverage_maps
+from visualize_coverage import plot_all_coverage_maps, plot_coverage_map
 from export_kml import export_all_coverage_to_kmz
 
 
@@ -113,7 +113,8 @@ def main() -> None:
 
     # Output toggles (non-interactive)
     SHOW_PLOTS = True
-    EXPORT_KMZ = True
+    SHOW_PLOTS_FL_BY_FL = False
+    EXPORT_KMZ = False
 
     print("=" * 70)
     print("NUMBA FULL GRID COVERAGE — ALL FLs")
@@ -147,8 +148,56 @@ def main() -> None:
 
     # ---------------- Visualize ----------------
     if SHOW_PLOTS:
-        print("\n3) Plotting all FL maps...")
-        plot_all_coverage_maps(coverage_maps, lats, lons, radar_lat, radar_lon)
+        print("\n3) Plotting all FL maps (BASEMAP + RELIEF)...")
+        plot_all_coverage_maps(
+            coverage_maps,
+            lats,
+            lons,
+            radar_lat,
+            radar_lon,
+            terrain=Z,
+            basemap=True,
+            basemap_provider="CartoDB.VoyagerNoLabels",
+            basemap_zoom=None,
+            visible_alpha=0.45,
+            blocked_alpha=0.22,
+            visible_color=(0.0, 0.70, 0.0),
+            blocked_color=(0.85, 0.05, 0.05),
+            background="basemap+relief",
+            relief_alpha=0.70,
+            airport_lat=43.6584,
+            airport_lon=7.2159,
+            airport_label="Nice Airport (LFMN)",
+            show_airport=True,
+        )
+
+    # Visualize FL by FL (one window per flight level)
+    if SHOW_PLOTS_FL_BY_FL:
+        print("\n3b) Plotting maps FL by FL...")
+        for fl in sorted(coverage_maps.keys()):
+            plot_coverage_map(
+                coverage_maps[fl],
+                lats,
+                lons,
+                float(fl),
+                radar_lat=radar_lat,
+                radar_lon=radar_lon,
+                terrain=Z,
+                basemap=True,
+                basemap_provider="CartoDB.VoyagerNoLabels",
+                basemap_zoom=None,
+                visible_alpha=0.45,
+                blocked_alpha=0.22,
+                visible_color=(0.0, 0.70, 0.0),
+                blocked_color=(0.85, 0.05, 0.05),
+                background="basemap+relief",
+                relief_alpha=0.70,
+                airport_lat=43.6584,
+                airport_lon=7.2159,
+                airport_label="Nice Airport (LFMN)",
+                show_airport=True,
+                save_path=None,
+            )
 
     # ---------------- Export KMZ ----------------
     if EXPORT_KMZ:
