@@ -10,7 +10,7 @@ INSTRUCTIONS FOR EVERYONE:
 
 2. Put these files IN THIS FOLDER:
    - terrain_req01_50km.npz
-   - page1.json
+   - geographical_data/page1.json
    - run_stations.py (this file)
 
 3. Open a terminal/PowerShell in this folder
@@ -43,10 +43,13 @@ print("=" * 70)
 
 print(f"\n📂 Working directory: {os.getcwd()}")
 
+# Path to stations data
+stations_path = 'geographical_data/page1.json'
+
 # List of required files
 required_files = {
     'terrain_req01_50km.npz': 'Terrain file (DTED)',
-    'page1.json': 'Enedis electrical stations data'
+    stations_path: 'Enedis electrical stations data'
 }
 
 missing_files = []
@@ -62,7 +65,9 @@ if missing_files:
     for msg in missing_files:
         print(msg)
     print("\n💡 SOLUTION:")
-    print("   1. Put all files in the SAME FOLDER as this script")
+    print("   1. Put all files in the correct structure:")
+    print("      - terrain_req01_50km.npz in root folder")
+    print("      - page1.json in geographical_data/ subfolder")
     print("   2. Check that you're in the correct folder (see above)")
     print("   3. Re-run the script")
     sys.exit(1)
@@ -88,9 +93,9 @@ except Exception as e:
 # STATIONS LOADING
 # ============================================================================
 
-print("\n📂 Loading electrical stations...")
+print(f"\n📂 Loading electrical stations from {stations_path}...")
 try:
-    with open('page1.json', 'r', encoding='utf-8') as f:
+    with open(stations_path, 'r', encoding='utf-8') as f:
         data = json.load(f)
     
     stations = []
@@ -114,6 +119,7 @@ try:
 
 except Exception as e:
     print(f"❌ Stations reading error: {e}")
+    print(f"   Make sure {stations_path} exists and is valid JSON")
     sys.exit(1)
 
 # Nice Airport
@@ -215,81 +221,84 @@ print("\n🔍 Creating zoomed map (stations < 10 km)...")
 nearby = [s for s in stations if s['distance_m'] < 10000]
 print(f"   {len(nearby)} stations to display")
 
-fig, ax = plt.subplots(figsize=(18, 16))
+if len(nearby) == 0:
+    print("⚠️ No stations found within 10 km — skipping zoom map.")
+else:
+    fig, ax = plt.subplots(figsize=(18, 16))
 
-# Zoom limits
-lat_nearby = [s['lat'] for s in nearby]
-lon_nearby = [s['lon'] for s in nearby]
-lat_min, lat_max = min(lat_nearby) - 0.02, max(lat_nearby) + 0.02
-lon_min, lon_max = min(lon_nearby) - 0.02, max(lon_nearby) + 0.02
+    # Zoom limits
+    lat_nearby = [s['lat'] for s in nearby]
+    lon_nearby = [s['lon'] for s in nearby]
+    lat_min, lat_max = min(lat_nearby) - 0.02, max(lat_nearby) + 0.02
+    lon_min, lon_max = min(lon_nearby) - 0.02, max(lon_nearby) + 0.02
 
-# Terrain filtering for zoom area
-lat_mask = (lats >= lat_min) & (lats <= lat_max)
-lon_mask = (lons >= lon_min) & (lons <= lon_max)
-Z_zoom = Z[np.ix_(lat_mask, lon_mask)]
-lats_zoom = lats[lat_mask]
-lons_zoom = lons[lon_mask]
+    # Terrain filtering for zoom area
+    lat_mask = (lats >= lat_min) & (lats <= lat_max)
+    lon_mask = (lons >= lon_min) & (lons <= lon_max)
+    Z_zoom = Z[np.ix_(lat_mask, lon_mask)]
+    lats_zoom = lats[lat_mask]
+    lons_zoom = lons[lon_mask]
 
-lon_grid_zoom, lat_grid_zoom = np.meshgrid(lons_zoom, lats_zoom)
+    lon_grid_zoom, lat_grid_zoom = np.meshgrid(lons_zoom, lats_zoom)
 
-# Zoomed terrain
-contour = ax.contourf(lon_grid_zoom, lat_grid_zoom, Z_zoom,
-                      levels=30, cmap='terrain', alpha=0.7)
-cbar = plt.colorbar(contour, ax=ax, label='Altitude (m)', pad=0.02)
+    # Zoomed terrain
+    contour = ax.contourf(lon_grid_zoom, lat_grid_zoom, Z_zoom,
+                          levels=30, cmap='terrain', alpha=0.7)
+    cbar = plt.colorbar(contour, ax=ax, label='Altitude (m)', pad=0.02)
 
-# Airport
-ax.plot(NICE_AIRPORT['lon'], NICE_AIRPORT['lat'], 
-        'r*', markersize=30, label='Nice Airport', 
-        markeredgewidth=3, markeredgecolor='white', zorder=10)
+    # Airport
+    ax.plot(NICE_AIRPORT['lon'], NICE_AIRPORT['lat'], 
+            'r*', markersize=30, label='Nice Airport', 
+            markeredgewidth=3, markeredgecolor='white', zorder=10)
 
-# Stations
-ax.scatter(lon_nearby, lat_nearby, 
-           c='blue', s=80, marker='s', 
-           label=f'Electrical Stations ({len(nearby)})',
-           edgecolors='white', linewidth=1.5, alpha=0.9, zorder=9)
+    # Stations
+    ax.scatter(lon_nearby, lat_nearby, 
+               c='blue', s=80, marker='s', 
+               label=f'Electrical Stations ({len(nearby)})',
+               edgecolors='white', linewidth=1.5, alpha=0.9, zorder=9)
 
-# 500m circles for ALL nearby stations
-for i, station in enumerate(nearby):
-    if i == 0:
-        circle = Circle((station['lon'], station['lat']), 
-                       radius_deg_lon,
-                       fill=False, edgecolor='blue', linestyle='--', 
-                       linewidth=1.5, alpha=0.5,
-                       label='500m Radius', zorder=8)
-    else:
-        circle = Circle((station['lon'], station['lat']), 
-                       radius_deg_lon,
-                       fill=False, edgecolor='blue', linestyle='--', 
-                       linewidth=1.5, alpha=0.5, zorder=8)
-    ax.add_patch(circle)
+    # 500m circles for ALL nearby stations
+    for i, station in enumerate(nearby):
+        if i == 0:
+            circle = Circle((station['lon'], station['lat']), 
+                           radius_deg_lon,
+                           fill=False, edgecolor='blue', linestyle='--', 
+                           linewidth=1.5, alpha=0.5,
+                           label='500m Radius', zorder=8)
+        else:
+            circle = Circle((station['lon'], station['lat']), 
+                           radius_deg_lon,
+                           fill=False, edgecolor='blue', linestyle='--', 
+                           linewidth=1.5, alpha=0.5, zorder=8)
+        ax.add_patch(circle)
 
-# Formatting
-ax.set_xlabel('Longitude (°)', fontsize=14, fontweight='bold')
-ax.set_ylabel('Latitude (°)', fontsize=14, fontweight='bold')
-ax.set_title('Zoomed Map - Nearby Stations (< 10 km)\n' +
-             'All 500m circles visible',
-             fontsize=16, fontweight='bold', pad=20)
+    # Formatting
+    ax.set_xlabel('Longitude (°)', fontsize=14, fontweight='bold')
+    ax.set_ylabel('Latitude (°)', fontsize=14, fontweight='bold')
+    ax.set_title('Zoomed Map - Nearby Stations (< 10 km)\n' +
+                 'All 500m circles visible',
+                 fontsize=16, fontweight='bold', pad=20)
 
-ax.legend(loc='upper left', fontsize=12, framealpha=0.95)
-ax.grid(True, alpha=0.3, linestyle='--')
+    ax.legend(loc='upper left', fontsize=12, framealpha=0.95)
+    ax.grid(True, alpha=0.3, linestyle='--')
 
-stats_text = f"""ZOOM < 10 KM
+    stats_text = f"""ZOOM < 10 KM
 ━━━━━━━━━━━━━
 Stations: {len(nearby)}
 All with 500m circle
 ━━━━━━━━━━━━━"""
 
-ax.text(0.02, 0.98, stats_text, transform=ax.transAxes,
-        fontsize=11, verticalalignment='top',
-        bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.95),
-        family='monospace')
+    ax.text(0.02, 0.98, stats_text, transform=ax.transAxes,
+            fontsize=11, verticalalignment='top',
+            bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.95),
+            family='monospace')
 
-plt.tight_layout()
+    plt.tight_layout()
 
-output_zoom = 'electrical_stations_zoom_10km.png'
-plt.savefig(output_zoom, dpi=200, bbox_inches='tight')
-print(f"✅ Zoomed map saved: {output_zoom}")
-plt.close()
+    output_zoom = 'electrical_stations_zoom_10km.png'
+    plt.savefig(output_zoom, dpi=200, bbox_inches='tight')
+    print(f"✅ Zoomed map saved: {output_zoom}")
+    plt.close()
 
 # ============================================================================
 # FINAL SUMMARY
@@ -303,8 +312,10 @@ print(f"\n📦 Files created in: {os.getcwd()}")
 print(f"\n📊 Generated maps:")
 print(f"   1. {output}")
 print(f"      → Full view: {len(stations)} stations, {len(stations_for_circles)} circles")
-print(f"\n   2. {output_zoom}")
-print(f"      → Zoomed view: {len(nearby)} stations < 10 km, all with 500m circle")
+
+if len(nearby) > 0:
+    print(f"\n   2. {output_zoom}")
+    print(f"      → Zoomed view: {len(nearby)} stations < 10 km, all with 500m circle")
 
 print(f"\n💡 Project constraints:")
 print(f"   ✅ REQ_06: Electrical access < 500m (blue circles)")
@@ -314,7 +325,7 @@ print(f"   ✅ Max radius 50 km from airport")
 print("\n🚀 To share with the team:")
 print("   - Send this script (run_stations.py)")
 print("   - Send terrain_req01_50km.npz")
-print("   - Send page1.json")
+print("   - Send geographical_data/page1.json")
 print("   → Everyone can generate the maps on their computer!")
 
 print("\n" + "=" * 70)
