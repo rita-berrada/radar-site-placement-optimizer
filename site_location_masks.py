@@ -1,265 +1,167 @@
 """
 Site Location Masks Module
 
-This module implements boolean geographical masks for Lot 2 - Radar site location study.
-These masks identify admissible areas for radar installation based on static geographical
-constraints without modifying terrain data.
-
-The masks are designed to be:
-- Reusable and combinable
-- Independent from any radar logic
-- Compatible with the DTED terrain grid structure
+This module implements boolean geographical masks for Lot 2.
+Adapted to work with the centralized ENU metric coordinate system.
 """
 
 import numpy as np
-from scipy.ndimage import distance_transform_edt  # Nouvel import pour le calcul de distance
+from scipy.ndimage import distance_transform_edt
 
+# We need constants to convert the political borders (Monaco/Italy) into Meters
+from geo_utils_earth_curvature import REF_LAT, REF_LON, EARTH_RADIUS_M
 
-def haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
-    """
-    Calculate the great-circle distance between two points on Earth using the haversine formula.
-    
-    Parameters:
-    -----------
-    lat1, lon1 : float
-        Latitude and longitude of first point (degrees)
-    lat2, lon2 : float
-        Latitude and longitude of second point (degrees)
-    
-    Returns:
-    --------
-    float
-        Distance in kilometers
-    """
-    # Earth radius in kilometers
-    R = 6371.0
-    
-    # Convert degrees to radians
-    lat1_rad = np.radians(lat1)
-    lon1_rad = np.radians(lon1)
-    lat2_rad = np.radians(lat2)
-    lon2_rad = np.radians(lon2)
-    
-    # Haversine formula
-    dlat = lat2_rad - lat1_rad
-    dlon = lon2_rad - lon1_rad
-    
-    a = np.sin(dlat / 2)**2 + np.cos(lat1_rad) * np.cos(lat2_rad) * np.sin(dlon / 2)**2
-    c = 2 * np.arctan2(np.sqrt(a), np.sqrt(1 - a))
-    
-    distance_km = R * c
-    return distance_km
-
-
-def mask_land(lats: np.ndarray, lons: np.ndarray, Z: np.ndarray) -> np.ndarray:
+def mask_land(Z_raw: np.ndarray) -> np.ndarray:
     """
     Create a boolean mask for onshore areas (land).
     
-    The mask is True where elevation > 0 meters (land) and False where elevation <= 0 (sea/offshore).
-    This mask is based solely on terrain elevation from the DTED grid.
+    IMPORTANT: This should use the RAW Terrain Z (from the file), 
+    NOT the curvature-corrected Z. Sea level is always 0 in raw data.
     
     Parameters:
     -----------
-    lats : np.ndarray
-        1D array of latitude values (degrees)
-    lons : np.ndarray
-        1D array of longitude values (degrees)
-    Z : np.ndarray
-        2D array of terrain elevation (meters above sea level), shape (len(lats), len(lons))
+    Z_raw : np.ndarray (2D)
+        Raw terrain elevation in meters.
     
     Returns:
     --------
-    np.ndarray
-        Boolean array of shape (len(lats), len(lons))
-        True = land (admissible), False = sea/offshore (excluded)
+    mask : np.ndarray (bool)
+        True = land (> 0), False = sea (<= 0).
     """
-    if Z.shape != (len(lats), len(lons)):
-        raise ValueError(f"Terrain shape mismatch: Z{Z.shape} vs ({len(lats)}, {len(lons)})")
-    
-    # True where elevation > 0 (land), False where elevation <= 0 (sea)
-    mask = Z > 0.0
-    return mask
+    # Simple check: Land is where elevation is positive
+    return Z_raw > 0.0
 
 
-def mask_coastline_buffer(lats: np.ndarray, lons: np.ndarray, Z: np.ndarray, buffer_m: float = 100.0) -> np.ndarray:
+def mask_coastline_buffer(X_grid: np.ndarray, Y_grid: np.ndarray, Z_raw: np.ndarray, buffer_m: float = 100.0) -> np.ndarray:
     """
-    Create a mask excluding the seaside buffer zone (REQ_03).
-    
-    Identifies land points that are at least 'buffer_m' meters away from the sea.
-    Uses Euclidean Distance Transform for accurate proximity calculation.
+    Create a mask excluding the seaside buffer zone.
     
     Parameters:
     -----------
-    lats : np.ndarray
-        1D array of latitude values (degrees).
-    lons : np.ndarray
-        1D array of longitude values (degrees).
-    Z : np.ndarray
-        2D array of terrain elevation (meters).
+    X_grid, Y_grid : np.ndarray
+        Metric grids (used to calculate pixel resolution).
+    Z_raw : np.ndarray
+        Raw elevation (to identify the sea).
     buffer_m : float
-        Minimum distance from the sea in meters (default: 100.0).
+        Buffer distance in meters.
         
     Returns:
     --------
-    np.ndarray
-        Boolean mask (True = Admissible/Inland, False = Too close to sea/Offshore).
+    mask : np.ndarray (bool)
+        True = Admissible (Inland), False = Too close to sea.
     """
-    # 1. Base Land Mask (True=Land, False=Sea)
-    land_mask = Z > 0
+    # 1. Base Land Mask
+    land_mask = Z_raw > 0
     
-    # 2. Compute local grid resolution (meters per pixel)
-    # 1 deg lat approx 111,132 m
-    # 1 deg lon approx 111,412 * cos(lat) m
-    lat_mean = np.mean(lats)
-    meters_per_deg_lat = 111132.0
-    meters_per_deg_lon = 111412.0 * np.cos(np.radians(lat_mean))
-    
-    # Average step in degrees
-    dlat = np.mean(np.abs(np.diff(lats)))
-    dlon = np.mean(np.abs(np.diff(lons)))
-    
-    # Pixel size in meters
-    res_y = dlat * meters_per_deg_lat
-    res_x = dlon * meters_per_deg_lon
-    mean_resolution = (res_y + res_x) / 2.0
+    # 2. Compute Grid Resolution automatically
+    # We look at the step size between two adjacent pixels
+    if X_grid.ndim == 2:
+        dx = np.abs(X_grid[0, 1] - X_grid[0, 0])
+        dy = np.abs(Y_grid[1, 0] - Y_grid[0, 0])
+    else:
+        # If 1D axes are passed
+        dx = np.abs(X_grid[1] - X_grid[0])
+        dy = np.abs(Y_grid[1] - Y_grid[0])
+        
+    mean_resolution = (dx + dy) / 2.0
     
     # 3. Compute distance from Sea (Distance Transform)
-    # Computes Euclidean distance to the nearest zero (Sea) for each non-zero pixel (Land)
+    # edt computes distance to the nearest zero (Sea) for each Land pixel
     dist_in_pixels = distance_transform_edt(land_mask)
     dist_in_meters = dist_in_pixels * mean_resolution
     
-    # 4. Apply Buffer Threshold
+    # 4. Apply Buffer
     return dist_in_meters > buffer_m
 
 
-def mask_50km(lats: np.ndarray, lons: np.ndarray, 
-              center_lat: float, center_lon: float, 
-              radius_km: float = 50.0) -> np.ndarray:
+def mask_50km(X_grid: np.ndarray, Y_grid: np.ndarray, radius_km: float = 50.0) -> np.ndarray:
     """
-    Create a boolean mask for locations within a specified radius from a center point.
+    Create a boolean mask for locations within radius.
     
-    The mask is True where distance from center <= radius_km, False otherwise.
-    Uses haversine distance calculation for accurate great-circle distances.
+    Since coordinates are relative to Nice Airport (0,0), 
+    calculation is purely Euclidean.
     
     Parameters:
     -----------
-    lats : np.ndarray
-        1D array of latitude values (degrees)
-    lons : np.ndarray
-        1D array of longitude values (degrees)
-    center_lat : float
-        Latitude of center point (degrees)
-    center_lon : float
-        Longitude of center point (degrees)
-    radius_km : float, optional
-        Maximum distance in kilometers (default: 50.0)
+    X_grid, Y_grid : np.ndarray
+        Metric coordinates.
+    radius_km : float
+        Radius in km.
     
     Returns:
     --------
-    np.ndarray
-        Boolean array of shape (len(lats), len(lons))
-        True = within radius (admissible), False = outside radius (excluded)
+    mask : np.ndarray (bool)
+        True = within radius.
     """
-    # Create meshgrid for all lat/lon combinations
-    lon_grid, lat_grid = np.meshgrid(lons, lats)
+    # Convert radius to meters
+    radius_m = radius_km * 1000.0
     
-    # Calculate distance from center to each grid point
-    # Vectorized haversine calculation
-    R = 6371.0  # Earth radius in kilometers
+    # Simple Pythagoras: Dist^2 = X^2 + Y^2
+    dist_sq = X_grid**2 + Y_grid**2
     
-    lat1_rad = np.radians(center_lat)
-    lon1_rad = np.radians(center_lon)
-    lat2_rad = np.radians(lat_grid)
-    lon2_rad = np.radians(lon_grid)
+    # Compare with radius squared (faster)
+    return dist_sq <= (radius_m**2)
+
+
+def mask_french_territory(X_grid: np.ndarray, Y_grid: np.ndarray) -> np.ndarray:
+    """
+    Create a boolean mask for French territory only.
+    Converts Lat/Lon borders of Monaco/Italy into local Metric borders.
     
-    dlat = lat2_rad - lat1_rad
-    dlon = lon2_rad - lon1_rad
+    Parameters:
+    -----------
+    X_grid, Y_grid : np.ndarray
+        Metric coordinates.
     
-    a = np.sin(dlat / 2)**2 + np.cos(lat1_rad) * np.cos(lat2_rad) * np.sin(dlon / 2)**2
-    c = 2 * np.arctan2(np.sqrt(a), np.sqrt(1 - a))
+    Returns:
+    --------
+    mask : np.ndarray (bool)
+        True = French territory.
+    """
+    # Initialize mask: all points are True by default
+    mask = np.ones(X_grid.shape, dtype=bool)
     
-    distances_km = R * c
+    # --- Conversion Constants ---
+    lat_ref_rad = np.radians(REF_LAT)
+    m_per_deg_lat = (np.pi / 180.0) * EARTH_RADIUS_M
+    m_per_deg_lon = (np.pi / 180.0) * EARTH_RADIUS_M * np.cos(lat_ref_rad)
     
-    # True where distance <= radius_km
-    mask = distances_km <= radius_km
+    # Helper to convert Lat/Lon to Y/X
+    def to_y(lat): return (lat - REF_LAT) * m_per_deg_lat
+    def to_x(lon): return (lon - REF_LON) * m_per_deg_lon
+
+    # 1. Exclude Monaco (Bounding Box)
+    # Original: 43.72-43.75°N, 7.40-7.44°E
+    monaco_y_min = to_y(43.72)
+    monaco_y_max = to_y(43.75)
+    monaco_x_min = to_x(7.40)
+    monaco_x_max = to_x(7.44)
+    
+    monaco_mask = ((Y_grid >= monaco_y_min) & (Y_grid <= monaco_y_max) &
+                   (X_grid >= monaco_x_min) & (X_grid <= monaco_x_max))
+    
+    mask[monaco_mask] = False
+    
+    # 2. Exclude Italy (East of border)
+    # Original: East of 7.5°E
+    italy_border_x = to_x(7.5)
+    
+    italy_mask = X_grid > italy_border_x
+    mask[italy_mask] = False
+    
     return mask
 
 
 def combine_masks(*masks: np.ndarray) -> np.ndarray:
     """
     Combine multiple boolean masks using logical AND.
-    
-    The result is True only where all input masks are True.
-    All masks must have the same shape.
-    
-    Parameters:
-    -----------
-    *masks : np.ndarray
-        Variable number of boolean arrays to combine
-    
-    Returns:
-    --------
-    np.ndarray
-        Combined boolean array (logical AND of all masks)
+    Unchanged logic.
     """
     if len(masks) == 0:
         raise ValueError("At least one mask must be provided")
     
-    # Check all masks have the same shape
-    shape = masks[0].shape
-    for i, mask in enumerate(masks[1:], 1):
-        if mask.shape != shape:
-            raise ValueError(f"Mask {i} has shape {mask.shape}, expected {shape}")
-    
-    # Combine using logical AND
     result = masks[0].copy()
     for mask in masks[1:]:
         result = np.logical_and(result, mask)
     
     return result
-
-
-def mask_french_territory(lats: np.ndarray, lons: np.ndarray) -> np.ndarray:
-    """
-    Create a boolean mask for French territory only.
-    
-    Excludes Monaco and Italy. The mask is True where the location is in France,
-    False for Monaco, Italy, or other non-French territories.
-    
-    Parameters:
-    -----------
-    lats : np.ndarray
-        1D array of latitude values (degrees)
-    lons : np.ndarray
-        1D array of longitude values (degrees)
-    
-    Returns:
-    --------
-    np.ndarray
-        Boolean array of shape (len(lats), len(lons))
-        True = French territory (admissible), False = Monaco/Italy/excluded
-    """
-    # Create meshgrid for all lat/lon combinations
-    lon_grid, lat_grid = np.meshgrid(lons, lats)
-    
-    # Initialize mask: all points are French by default
-    mask = np.ones((len(lats), len(lons)), dtype=bool)
-    
-    # Exclude Monaco (approximate bounding box)
-    # Monaco is roughly: 43.72-43.75°N, 7.40-7.44°E
-    monaco_lat_min = 43.72
-    monaco_lat_max = 43.75
-    monaco_lon_min = 7.40
-    monaco_lon_max = 7.44
-    
-    monaco_mask = ((lat_grid >= monaco_lat_min) & (lat_grid <= monaco_lat_max) &
-                   (lon_grid >= monaco_lon_min) & (lon_grid <= monaco_lon_max))
-    mask[monaco_mask] = False
-    
-    # Exclude Italy (east of French-Italian border)
-    # The border in this region is approximately at longitude 7.5-7.6°E
-    # Using a conservative boundary: exclude everything east of 7.5°E
-    italy_mask = lon_grid > 7.5
-    mask[italy_mask] = False
-    
-    return mask

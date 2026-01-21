@@ -2,23 +2,19 @@
 Buildings Masks Module
 
 This module implements boolean geographical masks for building proximity constraint.
-These masks identify admissible areas based on distance to building points
-(e.g., REQ_xx: no radar within 1 km of any dwelling/building).
-
-Masks are designed to be:
-- Reusable and combinable with other geographical masks
-- Independent from radar logic
-- Compatible with the DTED terrain grid structure
+Adapted to work with the centralized ENU metric coordinate system.
 """
 
 import numpy as np
 import json
 from typing import List, Dict
 
+# Constants for coordinate conversion
+from geo_utils_earth_curvature import REF_LAT, REF_LON, EARTH_RADIUS_M
 
-def load_buildings_from_geojson(geojson_file: str) -> List[Dict[str, float]]:
+def load_buildings_and_convert_to_enu(geojson_file: str) -> List[Dict[str, float]]:
     """
-    Load buildings data from GeoJSON file (Point geometries).
+    Load buildings from GeoJSON AND convert to ENU (Meters).
 
     Parameters:
     -----------
@@ -28,16 +24,27 @@ def load_buildings_from_geojson(geojson_file: str) -> List[Dict[str, float]]:
     Returns:
     --------
     List[Dict[str, float]]
-        List of buildings with 'lat', 'lon' keys
+        List of buildings with 'x_m', 'y_m' keys (Metric coordinates).
     """
     with open(geojson_file, "r", encoding="utf-8") as f:
         data = json.load(f)
 
-    buildings = []
-    for feat in data.get("features", []):
+    # Pre-calculate conversion factors
+    lat_ref_rad = np.radians(REF_LAT)
+    meters_per_deg_lat = (np.pi / 180.0) * EARTH_RADIUS_M
+    meters_per_deg_lon = (np.pi / 180.0) * EARTH_RADIUS_M * np.cos(lat_ref_rad)
+
+    buildings_enu = []
+    
+    # Handle FeatureCollection
+    features = data.get("features", [])
+    
+    for feat in features:
         geom = feat.get("geometry", {})
+        # We focus on Points for buildings
         if geom.get("type") != "Point":
             continue
+            
         coords = geom.get("coordinates", None)
         if not coords or len(coords) < 2:
             continue
@@ -45,160 +52,95 @@ def load_buildings_from_geojson(geojson_file: str) -> List[Dict[str, float]]:
         lon = float(coords[0])
         lat = float(coords[1])
 
-        buildings.append({"lat": lat, "lon": lon})
+        # Convert to Meters relative to Reference
+        y_m = (lat - REF_LAT) * meters_per_deg_lat
+        x_m = (lon - REF_LON) * meters_per_deg_lon
 
-    return buildings
+        buildings_enu.append({"x_m": x_m, "y_m": y_m})
+
+    return buildings_enu
 
 
-def haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+def mask_buildings_exclusion_fast(X_grid: np.ndarray, Y_grid: np.ndarray,
+                                  buildings_metric: List[Dict[str, float]],
+                                  radius_m: float = 1000.0) -> np.ndarray:
     """
-    Calculate the great-circle distance between two points on Earth.
+    Create a boolean mask EXCLUDING locations within radius_m of any building.
+    Now works purely in METERS (Euclidean Distance).
 
     Parameters:
     -----------
-    lat1, lon1 : float
-        Latitude and longitude of first point (degrees)
-    lat2, lon2 : float
-        Latitude and longitude of second point (degrees)
+    X_grid : np.ndarray (2D)
+        X coordinates of the terrain grid in meters.
+    Y_grid : np.ndarray (2D)
+        Y coordinates of the terrain grid in meters.
+    buildings_metric : List[Dict]
+        List of buildings with 'x_m' and 'y_m' coordinates.
+    radius_m : float
+        Exclusion radius in meters (default: 1000.0).
 
     Returns:
     --------
-    float
-        Distance in kilometers
+    mask : np.ndarray (bool)
+        True = admissible (FAR from buildings)
+        False = excluded (TOO CLOSE to a building)
     """
-    R = 6371.0  # Earth radius in kilometers
+    # Initialize mask as True (Everything is allowed by default)
+    mask = np.ones(X_grid.shape, dtype=bool)
 
-    lat1_rad = np.radians(lat1)
-    lon1_rad = np.radians(lon1)
-    lat2_rad = np.radians(lat2)
-    lon2_rad = np.radians(lon2)
+    print(f"   Processing {len(buildings_metric)} buildings (Metric System)...")
 
-    dlat = lat2_rad - lat1_rad
-    dlon = lon2_rad - lon1_rad
+    radius_sq = radius_m**2
 
-    a = np.sin(dlat / 2) ** 2 + np.cos(lat1_rad) * np.cos(lat2_rad) * np.sin(dlon / 2) ** 2
-    c = 2 * np.arctan2(np.sqrt(a), np.sqrt(1 - a))
+    for i, b in enumerate(buildings_metric):
+        if (i + 1) % 1000 == 0:
+            print(f"   ... building {i+1}/{len(buildings_metric)}")
 
-    return R * c
+        bx = b["x_m"]
+        by = b["y_m"]
 
+        # 1. Bounding Box Filter (in Meters)
+        x_min, x_max = bx - radius_m, bx + radius_m
+        y_min, y_max = by - radius_m, by + radius_m
 
-def mask_buildings_exclusion(lats: np.ndarray, lons: np.ndarray,
-                            buildings: List[Dict[str, float]],
-                            radius_m: float = 1000.0) -> np.ndarray:
-    """
-    Create a boolean mask excluding locations within radius_m of any building.
-
-    OPTIMIZED VERSION: Uses bounding boxes for faster calculation.
-
-    Mask definition:
-    - True  = admissible (farther than radius from all buildings)
-    - False = excluded (within radius of at least one building)
-
-    Parameters:
-    -----------
-    lats : np.ndarray
-        1D array of latitude values (degrees)
-    lons : np.ndarray
-        1D array of longitude values (degrees)
-    buildings : List[Dict[str, float]]
-        List of buildings with 'lat' and 'lon' keys
-    radius_m : float, optional
-        Exclusion radius in meters (default: 1000.0)
-
-    Returns:
-    --------
-    np.ndarray
-        Boolean array of shape (len(lats), len(lons))
-        True = admissible, False = excluded
-    """
-    # Create meshgrid for all lat/lon combinations
-    lon_grid, lat_grid = np.meshgrid(lons, lats)
-
-    # Initialize mask as True (everything admissible), then exclude around buildings
-    mask = np.ones((len(lats), len(lons)), dtype=bool)
-
-    # Convert radius from meters to kilometers
-    radius_km = radius_m / 1000.0
-
-    # Approximate radius in degrees for a bounding box
-    # 1 deg lat ≈ 111 km ; 1 deg lon ≈ 111*cos(lat) km
-    # Use a conservative latitude near Nice (~43.6°) like the electrical module
-    radius_deg_lat = radius_km / 111.0
-    radius_deg_lon = radius_km / (111.0 * np.cos(np.radians(43.6)))
-    buffer_deg = max(radius_deg_lat, radius_deg_lon) * 1.5  # safety margin
-
-    # Earth radius (km)
-    R = 6371.0
-
-    print(f"   Processing {len(buildings)} buildings (optimized)...")
-
-    for i, b in enumerate(buildings):
-        if (i + 1) % 500 == 0:
-            print(f"   ... building {i+1}/{len(buildings)}")
-
-        b_lat = b["lat"]
-        b_lon = b["lon"]
-
-        # Bounding box filter
-        lat_min = b_lat - buffer_deg
-        lat_max = b_lat + buffer_deg
-        lon_min = b_lon - buffer_deg
-        lon_max = b_lon + buffer_deg
-
-        in_box = ((lat_grid >= lat_min) & (lat_grid <= lat_max) &
-                  (lon_grid >= lon_min) & (lon_grid <= lon_max))
+        # Find grid points in bounding box
+        in_box = ((X_grid >= x_min) & (X_grid <= x_max) &
+                  (Y_grid >= y_min) & (Y_grid <= y_max))
 
         if not np.any(in_box):
             continue
 
-        # Exact distances only for points in bounding box
-        lat1_rad = np.radians(b_lat)
-        lon1_rad = np.radians(b_lon)
-        lat2_rad = np.radians(lat_grid[in_box])
-        lon2_rad = np.radians(lon_grid[in_box])
+        # 2. Exact Euclidean Distance Squared
+        # Only compute for points inside the box
+        dist_sq = (X_grid[in_box] - bx)**2 + (Y_grid[in_box] - by)**2
 
-        dlat = lat2_rad - lat1_rad
-        dlon = lon2_rad - lon1_rad
+        # Check against radius squared
+        too_close = dist_sq <= radius_sq
 
-        a = np.sin(dlat / 2) ** 2 + np.cos(lat1_rad) * np.cos(lat2_rad) * np.sin(dlon / 2) ** 2
-        c = 2 * np.arctan2(np.sqrt(a), np.sqrt(1 - a))
-
-        distances_km = R * c
-        too_close = distances_km <= radius_km
-
-        # Exclude points too close
+        # 3. Update Mask (Exclusion Logic)
+        # We only modify points inside the box.
+        # If a point is 'too_close', it becomes False.
+        # Logical AND with NOT too_close:
+        # True & ~True  -> False (Excluded)
+        # True & ~False -> True  (Kept)
         mask[in_box] = np.logical_and(mask[in_box], ~too_close)
-
-        # Micro-optim: if everything excluded, stop early
-        if not mask.any():
-            break
+        
+        # Optimization: If the whole map is already false, we can stop
+        # (Unlikely for buildings, but good practice)
+        # if not np.any(mask):
+        #     break
 
     return mask
 
 
-def mask_buildings_from_geojson(lats: np.ndarray, lons: np.ndarray,
-                               geojson_file: str = "buildings.geojson",
-                               radius_m: float = 1000.0) -> np.ndarray:
+def mask_buildings_from_geojson(X_grid: np.ndarray, Y_grid: np.ndarray,
+                                geojson_file: str = "buildings.geojson",
+                                radius_m: float = 1000.0) -> np.ndarray:
     """
-    Create buildings exclusion mask directly from GeoJSON file.
-
-    Convenience function that loads buildings and creates mask in one call.
-
-    Parameters:
-    -----------
-    lats : np.ndarray
-        1D array of latitude values (degrees)
-    lons : np.ndarray
-        1D array of longitude values (degrees)
-    geojson_file : str, optional
-        Path to buildings GeoJSON (default: "buildings.geojson")
-    radius_m : float, optional
-        Exclusion radius in meters (default: 1000.0)
-
-    Returns:
-    --------
-    np.ndarray
-        Boolean array (True=admissible, False=excluded)
+    Entry point. Loads GeoJSON, converts to meters, computes exclusion mask.
     """
-    buildings = load_buildings_from_geojson(geojson_file)
-    return mask_buildings_exclusion(lats, lons, buildings, radius_m)
+    # 1. Load and Convert to Meters
+    buildings_m = load_buildings_and_convert_to_enu(geojson_file)
+
+    # 2. Compute Mask using Metric Grid
+    return mask_buildings_exclusion_fast(X_grid, Y_grid, buildings_m, radius_m)

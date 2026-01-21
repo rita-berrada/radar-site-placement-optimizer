@@ -2,76 +2,89 @@
 FINAL SITE SELECTION MAIN SCRIPT
 
 This script generates the final 'authorized_points_all_masks.npz'.
-It combines:
-1. Geography (Land, 50km, France, Coastline Buffer > 100m)
-2. Terrain (Slope <= 15%)
-3. Infrastructure (Electricity < 500m, Roads < 500m, Buildings > 1000m)
-4. Residential Areas (Exclusion from export.geojson) <--- NEW
-5. Environment (Protected Areas exclusion)
-6. RADAR PERFORMANCE (Line of Sight to Nice Airport) <- FINAL FILTER
+It acts as the Coordinator:
+1. Loads Terrain & Converts to Metric System (ENU) with Earth Curvature Drop.
+2. Calculates all masks using X, Y (Meters) and Z_corrected (Curved Earth).
+3. EXCEPT for Land/Sea masks which use Z_raw (Real Altitude).
+4. Exports the final result in Latitude/Longitude for Google Earth.
 """
 
 import numpy as np
 import os
 
-# Geographic & Terrain Modules
+# --- 1. The New Geometry Engine ---
+from geo_utils_earth_curvature import load_and_convert_to_enu, REF_LAT, REF_LON
+
+# --- 2. The Updated Masks (Metric System Compatible) ---
 from site_location_masks import mask_land, mask_50km, mask_french_territory, combine_masks, mask_coastline_buffer
 from mask_slope import mask_slope
-
-# Infrastructure Modules
 from electrical_stations_masks import mask_electrical_from_json
 from roads_masks import mask_roads_from_geojson  
 from buildings_masks import mask_buildings_from_geojson
-from mask_residential import mask_residential_from_geojson # <--- NOUVEL IMPORT
-
-# Environmental Modules
+from mask_residential import mask_residential_from_geojson 
 from protected_areas_mask import mask_protected_areas_from_geojson
 
-# Radar Logic Module (The Final Check)
+# --- 3. The Physics Module (Line of Sight) ---
 from mask_see_airport import check_visibility_batch
 
-# Visualization Modules
+# --- 4. Visualization Modules (Existing) ---
 from visualize_site_location_masks import plot_masks_overlay
 from export_site_location_masks_kml import export_masks_to_kmz
 
-def load_terrain_npz(npz_file: str):
-    data = np.load(npz_file)
-    return data['lat'], data['lon'], data['ter']
-
 def main():
-    print("="*70)
-    print("FINAL SITE SELECTION - ALL CONSTRAINTS + RESIDENTIAL + LOS")
-    print("="*70)
+    print("="*80)
+    print("FINAL SITE SELECTION - METRIC SYSTEM + EARTH CURVATURE CORRECTION")
+    print("="*80)
     
     # ---------------------------------------------------------
     # 1. SETUP & DATA LOADING
     # ---------------------------------------------------------
     terrain_file = 'terrain_mat.npz' 
     if not os.path.exists(terrain_file):
-        terrain_file = 'terrain_req01_50km.npz'
-    
-    print(f"\n1. Loading terrain from: {terrain_file}")
-    try:
-        lats, lons, Z = load_terrain_npz(terrain_file)
-        print(f"   Grid size: {len(lats)} x {len(lons)}")
-    except Exception as e:
-        print(f"   Error: {e}")
-        return
+        # Fallback if the standard file name isn't found
+        if os.path.exists('terrain_req01_50km.npz'):
+            terrain_file = 'terrain_req01_50km.npz'
+        else:
+            print(f"[Error] No terrain .npz file found (looked for {terrain_file}).")
+            return
 
-    nice_lat, nice_lon = 43.6584, 7.2159 # Nice Airport
+    print(f"\n1. Loading terrain and converting to ENU Metrics...")
+    
+    # A. Load Corrected Data for CALCULATIONS (Physics/Geometry)
+    # X_m, Y_m are 1D axes (Vectors). Z_corrected is 2D matrix.
+    # lats, lons are 1D axes (Original Degrees).
+    X_m, Y_m, Z_corrected, lats, lons = load_and_convert_to_enu(terrain_file)
+    
+    # B. Load Raw Data for EXPORT and SEA DETECTION
+    # We MUST use the real altitude for the "Land Mask", otherwise the sea 
+    # at 50km would be at -200m (due to curvature correction) and considered as land.
+    raw_data = np.load(terrain_file)
+    Z_raw = raw_data['ter']
+
+    print(f"   Grid dimensions: {len(Y_m)} rows x {len(X_m)} cols")
+    print(f"   Center (Nice Airport) is at (0, 0) meters.")
+
+    # C. Create 2D Meshgrids
+    # Most masks (Roads, Buildings) need 2D matrices of coordinates to calculate distances.
+    X_grid, Y_grid = np.meshgrid(X_m, Y_m)
 
     # ---------------------------------------------------------
     # 2. GEOGRAPHICAL MASKS
     # ---------------------------------------------------------
-    print("\n2. Computing Geographical Masks...")
+    print("\n2. Computing Geographical Masks (Metric System)...")
     
-    # Basic Land & 50km & France
-    m_50km = mask_50km(lats, lons, nice_lat, nice_lon, radius_km=50.0)
-    m_france = mask_french_territory(lats, lons)
+    # REQ_01: 50km Radius (Using Metric Grid)
+    m_50km = mask_50km(X_grid, Y_grid, radius_km=50.0)
     
-    # REQ_03: Seaside Buffer (Stricter than mask_land)
+    # REQ_04: French Territory (Using Metric Grid conversion)
+    m_france = mask_french_territory(X_grid, Y_grid)
+    
+    # Land Mask (Using Z_raw > 0)
+    m_land = mask_land(Z_raw)
+    
+    # REQ_03: Seaside Buffer (Using Metric Grid + Z_raw)
     print("   -> Coastline Buffer (> 100m)")
-    m_seaside = mask_coastline_buffer(lats, lons, Z, buffer_m=100.0)
+    m_seaside = mask_coastline_buffer(X_grid, Y_grid, Z_raw, buffer_m=100.0)
 
     # ---------------------------------------------------------
     # 3. TERRAIN MASKS (Slope)
@@ -79,8 +92,9 @@ def main():
     print("\n3. Computing Terrain Masks...")
     
     # REQ_10: Slope <= 15%
+    # Note: mask_slope uses 1D axes (X_m, Y_m) and Z_corrected
     print("   -> Slope Constraint (<= 15%)")
-    m_slope = mask_slope(terrain_file, max_slope_percent=15.0)
+    m_slope = mask_slope(X_m, Y_m, Z_corrected, max_slope_percent=15.0)
 
     # ---------------------------------------------------------
     # 4. INFRASTRUCTURE & RESIDENTIAL MASKS
@@ -92,7 +106,7 @@ def main():
     m_elec = None
     if os.path.exists(elec_file):
         print("   -> Electrical Grid Proximity (< 500m)")
-        m_elec = mask_electrical_from_json(lats, lons, elec_file, radius_m=500.0)
+        m_elec = mask_electrical_from_json(X_grid, Y_grid, elec_file, radius_m=500.0)
     else:
         print(f"   [!] Missing {elec_file}, skipping electricity mask.")
 
@@ -101,7 +115,7 @@ def main():
     m_roads = None
     if os.path.exists(roads_file):
         print("   -> Road Network Proximity (< 500m)")
-        m_roads = mask_roads_from_geojson(lats, lons, roads_file, max_distance_m=500.0, major_roads_only=True)
+        m_roads = mask_roads_from_geojson(X_grid, Y_grid, roads_file, max_distance_m=500.0, major_roads_only=True)
     else:
         print(f"   [!] Missing {roads_file}, skipping roads mask.")
 
@@ -110,16 +124,16 @@ def main():
     m_build = None
     if os.path.exists(build_file):
         print("   -> Buildings Exclusion (> 1000m)")
-        m_build = mask_buildings_from_geojson(lats, lons, build_file, radius_m=1000.0)
+        m_build = mask_buildings_from_geojson(X_grid, Y_grid, build_file, radius_m=1000.0)
     else:
         print(f"   [!] Missing {build_file}, skipping buildings mask.")
 
-    # NOUVEAU : Residential Areas (export.geojson)
+    # Residential Areas (Exclusion)
     res_file = 'export.geojson'
     m_res = None
     if os.path.exists(res_file):
         print(f"   -> Residential Areas Exclusion ({res_file})")
-        m_res = mask_residential_from_geojson(lats, lons, res_file)
+        m_res = mask_residential_from_geojson(X_grid, Y_grid, res_file)
     else:
         print(f"   [!] Missing {res_file}, skipping residential mask.")
 
@@ -132,8 +146,8 @@ def main():
     prot_file = 'protected_areas.geojson'
     m_prot = None
     if os.path.exists(prot_file):
-        print("   -> Protected Areas Exclusion (Mercantour, etc.)")
-        m_prot = mask_protected_areas_from_geojson(lats, lons, prot_file)
+        print("   -> Protected Areas Exclusion")
+        m_prot = mask_protected_areas_from_geojson(X_grid, Y_grid, prot_file)
     else:
         print(f"   [!] Missing {prot_file}, skipping protected areas.")
 
@@ -144,34 +158,33 @@ def main():
     
     masks_list = [m_50km, m_france, m_seaside, m_slope]
     
-    # Dictionary for visualization
+    # Dictionary for visualization later
     masks_dict = {
         '50km Radius': m_50km,
         'French Territory': m_france,
-        'Seaside Buffer (>100m)': m_seaside,
-        'Slope (<=15%)': m_slope
+        'Seaside Buffer': m_seaside,
+        'Slope': m_slope
     }
 
     if m_elec is not None:
         masks_list.append(m_elec)
-        masks_dict['Electricity (<500m)'] = m_elec
+        masks_dict['Electricity'] = m_elec
     
     if m_roads is not None:
         masks_list.append(m_roads)
-        masks_dict['Roads (<500m)'] = m_roads
+        masks_dict['Roads'] = m_roads
         
     if m_build is not None:
         masks_list.append(m_build)
-        masks_dict['Buildings (>1000m)'] = m_build
+        masks_dict['Buildings'] = m_build
 
-    # Ajout Résidentiel
     if m_res is not None:
         masks_list.append(m_res)
-        masks_dict['Residential Areas'] = m_res
+        masks_dict['Residential'] = m_res
         
     if m_prot is not None:
         masks_list.append(m_prot)
-        masks_dict['Protected Areas'] = m_prot
+        masks_dict['Protected'] = m_prot
 
     # Logical AND combination
     pre_los_mask = combine_masks(*masks_list)
@@ -179,9 +192,9 @@ def main():
     print(f"   -> {pre_los_count:,} candidates before Line of Sight check.")
 
     # ---------------------------------------------------------
-    # 7. LINE OF SIGHT CHECK (The Final Filter)
+    # 7. LINE OF SIGHT CHECK (Final Physics Filter)
     # ---------------------------------------------------------
-    print("\n7. Checking Line of Sight to Airport (Final Filter)...")
+    print("\n7. Checking Line of Sight (Numba Accelerated + Earth Curvature)...")
     
     if pre_los_count == 0:
         print("   [!] No candidates left to check visibility.")
@@ -190,12 +203,12 @@ def main():
         # Get indices of remaining candidates
         cand_indices = np.where(pre_los_mask)
         
-        # Run Ray Tracing only on these points
-        # Radar Height = 20m, Target Height = 10m
+        # Run Ray Tracing on Z_corrected
+        # The function now takes Metric Axes (X_m, Y_m) and Target Lat/Lon
         is_visible = check_visibility_batch(
-            lats, lons, Z, 
+            X_m, Y_m, Z_corrected,
             cand_indices, 
-            nice_lat, nice_lon, 
+            REF_LAT, REF_LON,  # Nice Airport
             radar_height_m=20.0,
             target_height_m=10.0
         )
@@ -217,21 +230,24 @@ def main():
     masks_dict['FINAL CANDIDATES'] = final_mask
     
     # ---------------------------------------------------------
-    # 8. EXPORT
+    # 8. EXPORT (CRITICAL: BACK TO LAT/LON)
     # ---------------------------------------------------------
     print("\n8. Saving Results...")
 
-    # Save to NPZ
+    # Save to NPZ using LAT/LON for Google Earth compatibility
     output_npz = "authorized_points_all_masks.npz"
-    i, j = np.where(final_mask)
+    
+    # Get indices of final valid points
+    i_rows, j_cols = np.where(final_mask)
+    
     np.savez(
         output_npz,
-        lat=lats[i],
-        lon=lons[j],
-        z=Z[i, j],
+        lat=lats[i_rows],      # Map Row index -> Latitude
+        lon=lons[j_cols],      # Map Col index -> Longitude
+        z=Z_raw[i_rows, j_cols], # Store REAL altitude (not corrected)
         mask=final_mask
     )
-    print(f"   [OK] Data saved to {output_npz}")
+    print(f"   [OK] Data saved to {output_npz} (Lat/Lon format)")
 
     # KMZ Export
     try:

@@ -2,38 +2,40 @@
 Electrical Stations Masks Module
 
 This module implements boolean geographical masks for electrical infrastructure constraint.
-These masks identify admissible areas based on proximity to Enedis electrical stations
-(REQ_06: Electrical access < 500m).
-
-The masks are designed to be:
-- Reusable and combinable with other geographical masks
-- Independent from radar logic
-- Compatible with the DTED terrain grid structure
+Adapted to work with the centralized ENU metric coordinate system.
 """
 
 import numpy as np
 import json
-from typing import List, Dict, Optional
+from typing import List, Dict
 
+# We need these constants to convert Station GPS points into Local Meters
+from geo_utils_earth_curvature import REF_LAT, REF_LON, EARTH_RADIUS_M
 
-def load_stations_from_json(json_file: str) -> List[Dict[str, float]]:
+def load_stations_and_convert_to_enu(json_file: str) -> List[Dict[str, float]]:
     """
-    Load electrical stations data from Enedis JSON file.
+    Load electrical stations from JSON AND convert to ENU (Meters).
     
     Parameters:
     -----------
     json_file : str
-        Path to the page1.json file containing Enedis stations data
+        Path to the page1.json file containing Enedis stations data.
     
     Returns:
     --------
     List[Dict[str, float]]
-        List of stations with 'lat', 'lon', 'distance_m' keys
+        List of stations with 'x_m', 'y_m' keys (Metric coordinates).
     """
     with open(json_file, 'r', encoding='utf-8') as f:
         data = json.load(f)
     
-    stations = []
+    # Pre-calculate conversion factors (Same logic as geo_utils)
+    lat_ref_rad = np.radians(REF_LAT)
+    meters_per_deg_lat = (np.pi / 180.0) * EARTH_RADIUS_M
+    meters_per_deg_lon = (np.pi / 180.0) * EARTH_RADIUS_M * np.cos(lat_ref_rad)
+    
+    stations_enu = []
+    
     for result in data['results']:
         geopoint = result['_geopoint']
         if isinstance(geopoint, str):
@@ -42,166 +44,88 @@ def load_stations_from_json(json_file: str) -> List[Dict[str, float]]:
             lat = geopoint['lat']
             lon = geopoint['lon']
         
-        stations.append({
-            'lat': lat,
-            'lon': lon,
-            'distance_m': result['_geo_distance']
+        # Convert to Meters relative to Reference
+        y_m = (lat - REF_LAT) * meters_per_deg_lat
+        x_m = (lon - REF_LON) * meters_per_deg_lon
+        
+        stations_enu.append({
+            'x_m': x_m,
+            'y_m': y_m
         })
     
-    return stations
+    return stations_enu
 
 
-def haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+def mask_electrical_proximity_fast(X_grid: np.ndarray, Y_grid: np.ndarray, 
+                                   stations_metric: List[Dict[str, float]], 
+                                   radius_m: float = 500.0) -> np.ndarray:
     """
-    Calculate the great-circle distance between two points on Earth.
+    Create a boolean mask for locations within specified radius of any station.
+    Now works purely in METERS (Euclidean Distance).
     
     Parameters:
     -----------
-    lat1, lon1 : float
-        Latitude and longitude of first point (degrees)
-    lat2, lon2 : float
-        Latitude and longitude of second point (degrees)
+    X_grid : np.ndarray (2D)
+        X coordinates of the terrain grid in meters.
+    Y_grid : np.ndarray (2D)
+        Y coordinates of the terrain grid in meters.
+    stations_metric : List[Dict]
+        List of stations with 'x_m' and 'y_m' coordinates.
+    radius_m : float
+        Maximum distance in meters (default: 500.0).
     
     Returns:
     --------
-    float
-        Distance in kilometers
+    mask : np.ndarray (bool)
+        True = within radius (Admissible).
     """
-    R = 6371.0  # Earth radius in kilometers
+    # Initialize mask
+    mask = np.zeros(X_grid.shape, dtype=bool)
     
-    lat1_rad = np.radians(lat1)
-    lon1_rad = np.radians(lon1)
-    lat2_rad = np.radians(lat2)
-    lon2_rad = np.radians(lon2)
+    print(f"   Processing {len(stations_metric)} electrical stations (Metric System)...")
     
-    dlat = lat2_rad - lat1_rad
-    dlon = lon2_rad - lon1_rad
+    radius_sq = radius_m**2
     
-    a = np.sin(dlat / 2)**2 + np.cos(lat1_rad) * np.cos(lat2_rad) * np.sin(dlon / 2)**2
-    c = 2 * np.arctan2(np.sqrt(a), np.sqrt(1 - a))
-    
-    distance_km = R * c
-    return distance_km
-
-
-def mask_electrical_500m(lats: np.ndarray, lons: np.ndarray, 
-                         stations: List[Dict[str, float]], 
-                         radius_m: float = 500.0) -> np.ndarray:
-    """
-    Create a boolean mask for locations within specified radius of any electrical station.
-    
-    OPTIMIZED VERSION: Uses bounding boxes for faster calculation.
-    
-    The mask is True where at least one electrical station is within radius_m meters,
-    False otherwise. This implements REQ_06: Electrical access < 500m.
-    
-    Parameters:
-    -----------
-    lats : np.ndarray
-        1D array of latitude values (degrees)
-    lons : np.ndarray
-        1D array of longitude values (degrees)
-    stations : List[Dict[str, float]]
-        List of electrical stations with 'lat' and 'lon' keys
-    radius_m : float, optional
-        Maximum distance in meters (default: 500.0)
-    
-    Returns:
-    --------
-    np.ndarray
-        Boolean array of shape (len(lats), len(lons))
-        True = within radius of at least one station (admissible)
-        False = no station within radius (excluded)
-    """
-    # Create meshgrid for all lat/lon combinations
-    lon_grid, lat_grid = np.meshgrid(lons, lats)
-    
-    # Initialize mask as False (no stations nearby)
-    mask = np.zeros((len(lats), len(lons)), dtype=bool)
-    
-    # Convert radius from meters to kilometers
-    radius_km = radius_m / 1000.0
-    
-    # Approximate radius in degrees (for bounding box)
-    # At 43°N latitude, 1 degree ≈ 111 km for latitude, ~78 km for longitude
-    radius_deg_lat = radius_km / 111.0
-    radius_deg_lon = radius_km / (111.0 * np.cos(np.radians(43.6)))
-    buffer_deg = max(radius_deg_lat, radius_deg_lon) * 1.5  # Add safety margin
-    
-    # Earth radius in kilometers
-    R = 6371.0
-    
-    print(f"   Processing {len(stations)} electrical stations (optimized)...")
-    
-    # For each station, mark all grid points within radius
-    for i, station in enumerate(stations):
-        if (i + 1) % 50 == 0:  # Progress indicator
-            print(f"   ... station {i+1}/{len(stations)}")
+    for i, station in enumerate(stations_metric):
+        if (i + 1) % 50 == 0:
+            print(f"   ... station {i+1}/{len(stations_metric)}")
         
-        station_lat = station['lat']
-        station_lon = station['lon']
+        sx = station['x_m']
+        sy = station['y_m']
         
-        # OPTIMIZATION: Use bounding box to filter grid points first
-        lat_min = station_lat - buffer_deg
-        lat_max = station_lat + buffer_deg
-        lon_min = station_lon - buffer_deg
-        lon_max = station_lon + buffer_deg
+        # 1. Bounding Box Filter (in Meters)
+        x_min, x_max = sx - radius_m, sx + radius_m
+        y_min, y_max = sy - radius_m, sy + radius_m
         
         # Find grid points in bounding box
-        in_box = ((lat_grid >= lat_min) & (lat_grid <= lat_max) & 
-                 (lon_grid >= lon_min) & (lon_grid <= lon_max))
+        in_box = ((X_grid >= x_min) & (X_grid <= x_max) & 
+                  (Y_grid >= y_min) & (Y_grid <= y_max))
         
         if not np.any(in_box):
-            continue  # Skip if no points in bounding box
+            continue
         
-        # Calculate exact distance only for points in bounding box
-        lat1_rad = np.radians(station_lat)
-        lon1_rad = np.radians(station_lon)
-        lat2_rad = np.radians(lat_grid[in_box])
-        lon2_rad = np.radians(lon_grid[in_box])
+        # 2. Exact Euclidean Distance: (x-sx)^2 + (y-sy)^2
+        # Only compute for points inside the box
+        dist_sq = (X_grid[in_box] - sx)**2 + (Y_grid[in_box] - sy)**2
         
-        dlat = lat2_rad - lat1_rad
-        dlon = lon2_rad - lon1_rad
+        # Check against radius squared
+        within_radius = dist_sq <= radius_sq
         
-        a = np.sin(dlat / 2)**2 + np.cos(lat1_rad) * np.cos(lat2_rad) * np.sin(dlon / 2)**2
-        c = 2 * np.arctan2(np.sqrt(a), np.sqrt(1 - a))
-        
-        distances_km = R * c
-        
-        # Mark points within radius
-        within_radius = distances_km <= radius_km
-        
-        # Update mask (only for points in bounding box)
-        mask[in_box] = np.logical_or(mask[in_box], within_radius)
+        # Update mask
+        current_indices = np.where(in_box)
+        mask[current_indices] = np.logical_or(mask[current_indices], within_radius)
     
     return mask
 
 
-def mask_electrical_from_json(lats: np.ndarray, lons: np.ndarray,
-                               json_file: str = 'page1.json',
-                               radius_m: float = 500.0) -> np.ndarray:
+def mask_electrical_from_json(X_grid: np.ndarray, Y_grid: np.ndarray,
+                              json_file: str = 'page1.json',
+                              radius_m: float = 500.0) -> np.ndarray:
     """
-    Create electrical station mask directly from JSON file.
-    
-    Convenience function that loads stations and creates mask in one call.
-    
-    Parameters:
-    -----------
-    lats : np.ndarray
-        1D array of latitude values (degrees)
-    lons : np.ndarray
-        1D array of longitude values (degrees)
-    json_file : str, optional
-        Path to Enedis JSON file (default: 'page1.json')
-    radius_m : float, optional
-        Maximum distance in meters (default: 500.0)
-    
-    Returns:
-    --------
-    np.ndarray
-        Boolean array of shape (len(lats), len(lons))
-        True = within radius of electrical station (admissible)
-        False = no station within radius (excluded)
+    Entry point. Loads JSON, converts to meters, computes mask.
     """
-    stations = load_stations_from_json(json_file)
-    return mask_electrical_500m(lats, lons, stations, radius_m)
+    # 1. Load and Convert to Meters
+    stations_m = load_stations_and_convert_to_enu(json_file)
+    
+    # 2. Compute Mask using Metric Grid
+    return mask_electrical_proximity_fast(X_grid, Y_grid, stations_m, radius_m)
