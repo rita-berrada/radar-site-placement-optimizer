@@ -134,13 +134,32 @@ def mask_buildings_exclusion_fast(X_grid: np.ndarray, Y_grid: np.ndarray,
 
 
 def mask_buildings_from_geojson(X_grid: np.ndarray, Y_grid: np.ndarray,
-                                geojson_file: str = "buildings.geojson",
+                                geojson_file: str = "geographical_data/buildings.geojson",
                                 radius_m: float = 1000.0) -> np.ndarray:
     """
     Entry point. Loads GeoJSON, converts to meters, computes exclusion mask.
+    
+    Parameters:
+    -----------
+    X_grid : np.ndarray (2D)
+        X coordinates of the terrain grid in meters.
+    Y_grid : np.ndarray (2D)
+        Y coordinates of the terrain grid in meters.
+    geojson_file : str
+        Path to buildings GeoJSON file (default: "geographical_data/buildings.geojson").
+    radius_m : float
+        Exclusion radius in meters (default: 1000.0).
+    
+    Returns:
+    --------
+    mask : np.ndarray (bool)
+        True = admissible (FAR from buildings)
+        False = excluded (TOO CLOSE to a building)
     """
     # 1. Load and Convert to Meters
+    print(f"   Loading buildings from {geojson_file}...")
     buildings_m = load_buildings_and_convert_to_enu(geojson_file)
+    print(f"   ✅ Loaded {len(buildings_m)} buildings")
 
     # 2. Compute Mask using Metric Grid
     return mask_buildings_exclusion_fast(X_grid, Y_grid, buildings_m, radius_m)
