@@ -1,192 +1,168 @@
 """
-Main Coverage Analysis Script
+Main Coverage (NUMBA)
 
-This script orchestrates the complete coverage analysis workflow:
-1. Load terrain data (DTED 1 format)
-2. Compute coverage maps for all flight levels
-3. Visualize results
-4. Export to KML/KMZ for Google Earth
+This script is the NUMBA-based Lot 1 driver to compute full-grid coverage maps for
+all tender flight levels from a single radar location, optionally visualize them,
+and export the results to KMZ for Google Earth.
+
+Pipeline:
+1) Load terrain grid from terrain_mat.npz
+2) Normalize grid orientation + make arrays contiguous (Numba-friendly)
+3) For each FL: compute full-grid LOS coverage via LOS_numba.coverage_map_numba
+4) Visualize (matplotlib) and/or export KMZ
 """
 
+from __future__ import annotations
+
+from typing import Dict, List, Tuple
+
 import numpy as np
-from visualize_terrain import load_terrain_npz
-from coverage_analysis import compute_all_coverage_maps
+
+from LOS_numba import coverage_map_numba, fl_to_m, normalize_grid
 from visualize_coverage import plot_all_coverage_maps
 from export_kml import export_all_coverage_to_kmz
-from coverage_analysis_fast import compute_all_coverage_maps_fast
 
 
-# Try to import tqdm for progress bars
-try:
-    from tqdm import tqdm
-    HAS_TQDM = True
-except ImportError:
-    HAS_TQDM = False
-    print("Note: tqdm not available. Install with 'pip install tqdm' for progress bars.")
+def load_terrain_npz(npz_path: str) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Lightweight loader for terrain_mat.npz.
+
+    Expected NPZ keys:
+      - lat: (N,) latitude array
+      - lon: (M,) longitude array
+      - ter: (N,M) terrain elevation (meters MSL)
+    """
+    d = np.load(npz_path)
+    lats = d["lat"].astype(float)
+    lons = d["lon"].astype(float)
+    Z = d["ter"].astype(float)
+
+    if Z.shape != (len(lats), len(lons)):
+        raise ValueError(f"Incohérence: Z{Z.shape} vs ({len(lats)}, {len(lons)})")
+
+    return lats, lons, Z
 
 
-def main():
-    """Main execution function."""
-    
-    # ============================================================
-    # Configuration
-    # ============================================================
-    
-    # Terrain data file (DTED 1 format)
-    terrain_file = 'terrain_mat.npz'
-    
-    # Radar position
-    radar_lat = 43.664658   # Example: Nice Airport latitude
-    radar_lon = 7.204519    # Example: Nice Airport longitude
-    radar_height_agl_m = 20.0  # Radar height above ground level (meters)
-    
-    # Flight levels (tender requirement)
+def compute_all_fls_numba_fullgrid(
+    radar_lat: float,
+    radar_lon: float,
+    radar_height_agl_m: float,
+    flight_levels: List[float],
+    lats: np.ndarray,
+    lons: np.ndarray,
+    Z: np.ndarray,
+    n_samples: int = 400,
+    margin_m: float = 0.0,
+) -> Dict[float, np.ndarray]:
+    """
+    Compute full-grid coverage maps for all FLs using LOS_numba.
+
+    Returns:
+      Dict[float, np.ndarray]: {FL: coverage_map_bool} where coverage_map has shape (N,M).
+    """
+    # Numba kernel expects a uniform grid defined by origin and constant step
+    if lats.size < 2 or lons.size < 2:
+        raise ValueError("Terrain grid too small: need at least 2x2 points.")
+
+    lats0 = float(lats[0])
+    lons0 = float(lons[0])
+    dlat = float(lats[1] - lats[0])
+    dlon = float(lons[1] - lons[0])
+
+    if dlat == 0.0 or dlon == 0.0:
+        raise ValueError("Invalid grid step: dlat/dlon is zero.")
+
+    coverage_maps: Dict[float, np.ndarray] = {}
+
+    for idx, fl in enumerate([float(x) for x in flight_levels], start=1):
+        target_alt_msl = float(fl_to_m(fl))
+        print(f"→ FL{int(fl):3d} ({idx}/{len(flight_levels)}) ...", end="", flush=True)
+
+        cov = coverage_map_numba(
+            float(radar_lat), float(radar_lon), float(radar_height_agl_m),
+            float(target_alt_msl),
+            lats, lons,
+            float(lats0), float(lons0), float(dlat), float(dlon), Z,
+            int(n_samples), float(margin_m),
+        )
+
+        visible = int(cov.sum())
+        total = int(cov.size)
+        pct = 100.0 * visible / total if total else 0.0
+        print(f" ✓ {pct:6.2f}% visible")
+
+        coverage_maps[fl] = cov
+
+    return coverage_maps
+
+
+def main() -> None:
+    # ---------------- Configuration ----------------
+    terrain_file = "terrain_mat.npz"
+    kmz_output = "radar_coverage_numba.kmz"
+
+    radar_lat = 43.66375
+    radar_lon = 7.07868
+    radar_height_agl_m = 20.0
+
     flight_levels = [5, 10, 20, 50, 100, 200, 300, 400]
-    
-    # LOS parameters
-    n_samples = 400  # Number of samples along LOS path
-    margin_m = 0.0   # Safety margin (meters)
-    
-    # TEST MODE: Use smaller grid for faster testing
-    # Set to True to use every Nth point (much faster but lower resolution)
-    TEST_MODE = True
-    TEST_GRID_STEP = 10  # Use every 10th point in test mode
-    
-    # Output file
-    kmz_output = 'radar_coverage.kmz'
-    
-    # ============================================================
-    # Load terrain data
-    # ============================================================
-    
-    print("Loading terrain data...")
-    try:
-        lats_full, lons_full, Z_full = load_terrain_npz(terrain_file)
-        print(f"Terrain loaded: {len(lats_full)} x {len(lons_full)} grid points")
-        print(f"Latitude range: {lats_full.min():.6f} to {lats_full.max():.6f}")
-        print(f"Longitude range: {lons_full.min():.6f} to {lons_full.max():.6f}")
-        
-        # Apply test mode if enabled
-        if TEST_MODE:
-            print(f"\n⚠️  TEST MODE ENABLED: Using every {TEST_GRID_STEP}th point")
-            lats = lats_full[::TEST_GRID_STEP]
-            lons = lons_full[::TEST_GRID_STEP]
-            Z = Z_full[::TEST_GRID_STEP, ::TEST_GRID_STEP]
-            print(f"Reduced grid: {len(lats)} x {len(lons)} = {len(lats)*len(lons):,} points")
-        else:
-            lats, lons, Z = lats_full, lons_full, Z_full
-            
 
-            
-    except FileNotFoundError:
-        print(f"Error: Terrain file '{terrain_file}' not found.")
-        return
-    except Exception as e:
-        print(f"Error loading terrain: {e}")
-        return
-    
-    # ============================================================
-    # Compute coverage maps
-    # ============================================================
-    
-    print("\nComputing coverage maps...")
-    grid_size = len(lats) * len(lons)
-    total_calculations = grid_size * len(flight_levels)
-    print(f"Grid size: {len(lats)} x {len(lons)} = {grid_size:,} points")
-    print(f"Total LOS calculations: {total_calculations:,} ({total_calculations/1e6:.1f} million)")
-    
-    # Rough time estimate (very approximate)
-    # Assuming ~0.001-0.01 seconds per LOS calculation depending on complexity
-    est_seconds = total_calculations * 0.005  # Conservative estimate
-    est_minutes = est_seconds / 60
-    est_hours = est_minutes / 60
-    
-    if est_hours >= 1:
-        print(f"\n⚠️  WARNING: Estimated computation time: {est_hours:.1f} hours ({est_minutes:.0f} minutes)")
-        print("   This will take a VERY long time for the full grid!")
-        print("   Consider:")
-        print("   - Setting TEST_MODE = True in the script for faster testing")
-        print("   - Reducing n_samples (currently 400)")
-        print("   - Processing fewer flight levels")
-        response = input("\nContinue with full computation? (y/n): ").lower().strip()
-        if response != 'y':
-            print("Computation cancelled. Edit main_coverage.py to enable TEST_MODE for faster testing.")
-            return
-    elif est_minutes > 10:
-        print(f"Estimated time: {est_minutes:.1f} minutes")
-    else:
-        print(f"Estimated time: {est_seconds:.0f} seconds")
-    
-    print("\nStarting computation...")
-    print("(Progress: each flight level will print when complete)")
-    
-    # Track current flight level being processed
-    current_fl = [None]  # Use list to allow modification in nested function
-    
-    # Progress callback for flight levels
-    def fl_progress_callback(fl, current, total_fl):
-        print(f"  ✓ FL{fl:3.0f} complete ({current}/{total_fl})")
-        if current < total_fl:
-            print(f"  → Starting FL{flight_levels[current]}...")
-    
-    # Compute all coverage maps
-    try:
-        coverage_maps = compute_all_coverage_maps_fast(
-            radar_lat, radar_lon, radar_height_agl_m,
-            flight_levels, lats, lons, Z,
-            n_samples=n_samples, margin_m=margin_m,
-            batch_size=1024
-        )
-        
+    # LOS sampling parameters
+    n_samples = 200
+    margin_m = 0.0
 
-    except Exception as e:
-        print(f"Error computing coverage maps: {e}")
-        import traceback
-        traceback.print_exc()
-        return
-    
-    # Print statistics
-    print("\nCoverage Statistics:")
-    print("-" * 50)
-    for fl in sorted(coverage_maps.keys()):
-        coverage_pct = np.sum(coverage_maps[fl]) / coverage_maps[fl].size * 100
-        print(f"FL{fl:3.0f}: {coverage_pct:6.2f}% visible")
-    print("-" * 50)
-    
-    # ============================================================
-    # Visualize results
-    # ============================================================
-    
-    print("\nGenerating coverage maps...")
-    try:
-        plot_all_coverage_maps(
-            coverage_maps, lats, lons, radar_lat, radar_lon
+    # Output toggles (non-interactive)
+    SHOW_PLOTS = True
+    EXPORT_KMZ = True
+
+    print("=" * 70)
+    print("NUMBA FULL GRID COVERAGE — ALL FLs")
+    print("=" * 70)
+
+    # ---------------- Load + normalize terrain ----------------
+    print("\n1) Loading terrain...")
+    lats_full, lons_full, Z_full = load_terrain_npz(terrain_file)
+
+    # Always use full grid (Numba provides the acceleration)
+    lats, lons, Z = lats_full, lons_full, Z_full
+
+    lats, lons, Z = normalize_grid(lats, lons, Z)
+    print(f"   Grid: {len(lats)} x {len(lons)} = {len(lats) * len(lons):,} points")
+
+    # ---------------- Compute coverage maps (Numba) ----------------
+    print("\n2) Computing coverage maps (Numba + parallel)...")
+    print("   (First run compiles Numba and can be slower.)")
+
+    coverage_maps = compute_all_fls_numba_fullgrid(
+        radar_lat=radar_lat,
+        radar_lon=radar_lon,
+        radar_height_agl_m=radar_height_agl_m,
+        flight_levels=flight_levels,
+        lats=lats,
+        lons=lons,
+        Z=Z,
+        n_samples=n_samples,
+        margin_m=margin_m,
+    )
+
+    # ---------------- Visualize ----------------
+    if SHOW_PLOTS:
+        print("\n3) Plotting all FL maps...")
+        plot_all_coverage_maps(coverage_maps, lats, lons, radar_lat, radar_lon)
+
+    # ---------------- Export KMZ ----------------
+    if EXPORT_KMZ:
+        print("\n4) Exporting KMZ...")
+        export_all_coverage_to_kmz(
+            coverage_maps,
+            lats,
+            lons,
+            radar_lat=radar_lat,
+            radar_lon=radar_lon,
+            output_path=kmz_output,
         )
-        print("Coverage maps displayed successfully!")
-    except Exception as e:
-        print(f"Error generating maps: {e}")
-        import traceback
-        traceback.print_exc()
-    
-    # ============================================================
-    # Export to KML/KMZ
-    # ============================================================
-    
-    export_kmz = input(f"\nExport to KMZ file '{kmz_output}'? (y/n): ").lower().strip() == 'y'
-    if export_kmz:
-        print("Exporting to KMZ...")
-        try:
-            export_all_coverage_to_kmz(
-                coverage_maps, lats, lons, radar_lat, radar_lon,
-                output_path=kmz_output
-            )
-            print(f"Export complete! Open '{kmz_output}' in Google Earth to view.")
-        except Exception as e:
-            print(f"Error exporting KMZ: {e}")
-            import traceback
-            traceback.print_exc()
-    
-    print("\nAnalysis complete!")
+
+    print("\nDone ✓")
 
 
 if __name__ == "__main__":

@@ -51,7 +51,17 @@ def plot_coverage_map(
     
     # Use imshow for simple 2D map (extent sets the coordinate system)
     extent = [lons.min(), lons.max(), lats.min(), lats.max()]
-    im = ax.imshow(coverage_float, cmap=cmap, aspect='auto', origin='lower', extent=extent, interpolation='nearest')
+    # Force fixed normalization so constant arrays (all 0 or all 1) render correctly.
+    im = ax.imshow(
+        coverage_float,
+        cmap=cmap,
+        aspect='auto',
+        origin='lower',
+        extent=extent,
+        interpolation='nearest',
+        vmin=0,
+        vmax=1,
+    )
     
     # Mark radar position if provided
     if radar_lat is not None and radar_lon is not None:
@@ -139,8 +149,16 @@ def plot_all_coverage_maps(
         coverage_float = coverage_maps[fl].astype(float)
         
         # Use imshow for simple 2D map
-        im = ax.imshow(coverage_float, cmap=cmap, aspect='auto', origin='lower', 
-                      extent=extent, interpolation='nearest')
+        im = ax.imshow(
+            coverage_float,
+            cmap=cmap,
+            aspect='auto',
+            origin='lower',
+            extent=extent,
+            interpolation='nearest',
+            vmin=0,
+            vmax=1,
+        )
         
         # Mark radar position if provided
         if radar_lat is not None and radar_lon is not None:
