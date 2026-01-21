@@ -1,15 +1,16 @@
 """
-Main Coverage (NUMBA)
+Main Coverage (NUMBA ENU)
 
 This script is the NUMBA-based Lot 1 driver to compute full-grid coverage maps for
-all tender flight levels from a single radar location, optionally visualize them,
-and export the results to KMZ for Google Earth.
+all tender flight levels from a single radar location, using ENU (East-North-Up) 
+coordinate system for better accuracy.
 
 Pipeline:
 1) Load terrain grid from terrain_mat.npz
-2) Normalize grid orientation + make arrays contiguous (Numba-friendly)
-3) For each FL: compute full-grid LOS coverage via LOS_numba.coverage_map_numba
-4) Visualize (matplotlib) and/or export KMZ
+2) Convert lat/lon grid to ENU meters
+3) Normalize grid orientation + make arrays contiguous (Numba-friendly)
+4) For each FL: compute full-grid LOS coverage via LOS_numba_enu.coverage_map_numba_xy
+5) Visualize (matplotlib) and/or export KMZ
 """
 
 from __future__ import annotations
@@ -18,7 +19,12 @@ from typing import Dict, List, Tuple
 
 import numpy as np
 
-from LOS_numba import coverage_map_numba, fl_to_m, normalize_grid
+from LOS_numba_enu import (
+    coverage_map_numba_xy, 
+    fl_to_m, 
+    normalize_xy_grid,
+    latlon_to_xy_m
+)
 from visualize_coverage import plot_all_coverage_maps, plot_coverage_map
 from export_kml import export_all_coverage_to_kmz
 
@@ -43,6 +49,34 @@ def load_terrain_npz(npz_path: str) -> Tuple[np.ndarray, np.ndarray, np.ndarray]
     return lats, lons, Z
 
 
+def convert_terrain_to_enu(
+    lats: np.ndarray,
+    lons: np.ndarray,
+    Z: np.ndarray
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Convert lat/lon terrain grid to ENU (East-North-Up) meters.
+    
+    Returns:
+        X_m: 1D array of X coordinates (east) in meters, len M
+        Y_m: 1D array of Y coordinates (north) in meters, len N
+        Z: 2D terrain elevation array (N, M) - unchanged
+    """
+    # Convert longitude axis to X (east) in meters
+    X_m = np.zeros(len(lons), dtype=float)
+    for j, lon in enumerate(lons):
+        x, _ = latlon_to_xy_m(lats[0], lon)  # Use first lat for reference
+        X_m[j] = x
+    
+    # Convert latitude axis to Y (north) in meters
+    Y_m = np.zeros(len(lats), dtype=float)
+    for i, lat in enumerate(lats):
+        _, y = latlon_to_xy_m(lat, lons[0])  # Use first lon for reference
+        Y_m[i] = y
+    
+    return X_m, Y_m, Z
+
+
 def compute_all_fls_numba_fullgrid(
     radar_lat: float,
     radar_lon: float,
@@ -55,22 +89,35 @@ def compute_all_fls_numba_fullgrid(
     margin_m: float = 0.0,
 ) -> Dict[float, np.ndarray]:
     """
-    Compute full-grid coverage maps for all FLs using LOS_numba.
+    Compute full-grid coverage maps for all FLs using LOS_numba_enu (ENU coordinates).
 
     Returns:
       Dict[float, np.ndarray]: {FL: coverage_map_bool} where coverage_map has shape (N,M).
     """
-    # Numba kernel expects a uniform grid defined by origin and constant step
-    if lats.size < 2 or lons.size < 2:
+    # Convert terrain grid to ENU coordinates
+    print("   Converting to ENU coordinates...")
+    X_m, Y_m, Z_enu = convert_terrain_to_enu(lats, lons, Z)
+    
+    # Normalize grid (ensure increasing order)
+    X_m, Y_m, Z_enu = normalize_xy_grid(X_m, Y_m, Z_enu)
+    
+    # Convert radar position to ENU
+    radar_x, radar_y = latlon_to_xy_m(radar_lat, radar_lon)
+    
+    # Get grid parameters
+    if X_m.size < 2 or Y_m.size < 2:
         raise ValueError("Terrain grid too small: need at least 2x2 points.")
 
-    lats0 = float(lats[0])
-    lons0 = float(lons[0])
-    dlat = float(lats[1] - lats[0])
-    dlon = float(lons[1] - lons[0])
+    x0 = float(X_m[0])
+    y0 = float(Y_m[0])
+    dx = float(X_m[1] - X_m[0])
+    dy = float(Y_m[1] - Y_m[0])
 
-    if dlat == 0.0 or dlon == 0.0:
-        raise ValueError("Invalid grid step: dlat/dlon is zero.")
+    if dx == 0.0 or dy == 0.0:
+        raise ValueError("Invalid grid step: dx/dy is zero.")
+
+    print(f"   Grid in ENU: X=[{X_m[0]:.1f}, {X_m[-1]:.1f}]m, Y=[{Y_m[0]:.1f}, {Y_m[-1]:.1f}]m")
+    print(f"   Radar ENU: x={radar_x:.1f}m, y={radar_y:.1f}m")
 
     coverage_maps: Dict[float, np.ndarray] = {}
 
@@ -78,11 +125,11 @@ def compute_all_fls_numba_fullgrid(
         target_alt_msl = float(fl_to_m(fl))
         print(f"→ FL{int(fl):3d} ({idx}/{len(flight_levels)}) ...", end="", flush=True)
 
-        cov = coverage_map_numba(
-            float(radar_lat), float(radar_lon), float(radar_height_agl_m),
+        cov = coverage_map_numba_xy(
+            float(radar_x), float(radar_y), float(radar_height_agl_m),
             float(target_alt_msl),
-            lats, lons,
-            float(lats0), float(lons0), float(dlat), float(dlon), Z,
+            X_m, Y_m,
+            float(x0), float(y0), float(dx), float(dy), Z_enu,
             int(n_samples), float(margin_m),
         )
 
@@ -99,7 +146,7 @@ def compute_all_fls_numba_fullgrid(
 def main() -> None:
     # ---------------- Configuration ----------------
     terrain_file = "terrain_mat.npz"
-    kmz_output = "radar_coverage_numba.kmz"
+    kmz_output = "radar_coverage_numba_enu.kmz"
 
     radar_lat = 43.66375
     radar_lon = 7.07868
@@ -117,21 +164,20 @@ def main() -> None:
     EXPORT_KMZ = False
 
     print("=" * 70)
-    print("NUMBA FULL GRID COVERAGE — ALL FLs")
+    print("NUMBA FULL GRID COVERAGE — ALL FLs (ENU COORDINATES)")
     print("=" * 70)
 
-    # ---------------- Load + normalize terrain ----------------
+    # ---------------- Load terrain ----------------
     print("\n1) Loading terrain...")
     lats_full, lons_full, Z_full = load_terrain_npz(terrain_file)
 
     # Always use full grid (Numba provides the acceleration)
     lats, lons, Z = lats_full, lons_full, Z_full
 
-    lats, lons, Z = normalize_grid(lats, lons, Z)
     print(f"   Grid: {len(lats)} x {len(lons)} = {len(lats) * len(lons):,} points")
 
-    # ---------------- Compute coverage maps (Numba) ----------------
-    print("\n2) Computing coverage maps (Numba + parallel)...")
+    # ---------------- Compute coverage maps (Numba ENU) ----------------
+    print("\n2) Computing coverage maps (Numba + parallel + ENU)...")
     print("   (First run compiles Numba and can be slower.)")
 
     coverage_maps = compute_all_fls_numba_fullgrid(
