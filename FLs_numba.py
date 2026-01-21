@@ -24,11 +24,11 @@ def main():
     # ---------------- Configuration ----------------
     terrain_file = "terrain_mat.npz"
 
-    radar_lat = 43.66208
-    radar_lon = 7.07785
-    radar_h_agl = 20.0
+    radar_lat = 43.258099
+    radar_lon = 7.028494
+    radar_h_agl = 25.0
 
-    flight_level = 10.0   # change to 100.0, etc.
+    flight_level = 50 # change to 100.0, etc.
     n_samples = 400
     margin_m = 0.0
 
