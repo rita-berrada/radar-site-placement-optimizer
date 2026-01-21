@@ -102,7 +102,7 @@ def main():
     print("\n4. Computing Infrastructure & Residential Masks...")
 
     # REQ_06: Electricity < 500m
-    elec_file = 'page1.json'
+    elec_file = 'geographical_data/page1.json'
     m_elec = None
     if os.path.exists(elec_file):
         print("   -> Electrical Grid Proximity (< 500m)")
@@ -111,7 +111,7 @@ def main():
         print(f"   [!] Missing {elec_file}, skipping electricity mask.")
 
     # REQ_05: Roads < 500m
-    roads_file = 'roads_nice_50km.geojson'
+    roads_file = 'geographical_data/roads_nice_50km.geojson'
     m_roads = None
     if os.path.exists(roads_file):
         print("   -> Road Network Proximity (< 500m)")
@@ -120,7 +120,7 @@ def main():
         print(f"   [!] Missing {roads_file}, skipping roads mask.")
 
     # REQ_02: Buildings > 1000m
-    build_file = 'buildings.geojson'
+    build_file = 'geographical_data/buildings.geojson'
     m_build = None
     if os.path.exists(build_file):
         print("   -> Buildings Exclusion (> 1000m)")
@@ -129,7 +129,7 @@ def main():
         print(f"   [!] Missing {build_file}, skipping buildings mask.")
 
     # Residential Areas (Exclusion)
-    res_file = 'export.geojson'
+    res_file = 'geographical_data/export.geojson'
     m_res = None
     if os.path.exists(res_file):
         print(f"   -> Residential Areas Exclusion ({res_file})")
@@ -143,7 +143,7 @@ def main():
     print("\n5. Computing Environmental Masks...")
     
     # Protected Areas (National Parks, etc.)
-    prot_file = 'protected_areas.geojson'
+    prot_file = 'geographical_data/protected_areas.geojson'
     m_prot = None
     if os.path.exists(prot_file):
         print("   -> Protected Areas Exclusion")
