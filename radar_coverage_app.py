@@ -9,6 +9,9 @@ A comprehensive application for radar coverage analysis that:
 5. Exports results to KMZ format
 
 Author: Radar Analysis Team
+
+NOTE: This app uses the same Earth curvature-corrected algorithms as main_coverage.py
+to ensure consistent coverage computation results.
 """
 
 import streamlit as st
@@ -37,6 +40,14 @@ try:
     HAS_CONTEXTILY = True
 except ImportError:
     HAS_CONTEXTILY = False
+
+# Import Earth curvature-corrected modules (same as main_coverage.py)
+try:
+    from geo_utils_earth_curvature import load_and_convert_to_enu, REF_LAT, REF_LON, EARTH_RADIUS_M as GEO_EARTH_RADIUS_M
+    from LOS_numba_enu import coverage_map_numba_xy, latlon_to_xy_m as los_latlon_to_xy_m, fl_to_m as los_fl_to_m
+    HAS_CURVATURE_MODULES = True
+except ImportError:
+    HAS_CURVATURE_MODULES = False
 
 # ============================================================================
 # MEDIUM DARK BLUE-GREY PALETTE
@@ -208,6 +219,7 @@ def render_title():
 # ============================================================================
 
 def load_terrain_npz(npz_file) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Load raw terrain data from NPZ file (without curvature correction)."""
     data = np.load(npz_file)
     lats = data['lat'].astype(float)
     lons = data['lon'].astype(float)
@@ -217,7 +229,50 @@ def load_terrain_npz(npz_file) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     return lats, lons, Z
 
 
+def load_terrain_with_curvature(npz_file_path: str) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Load terrain data with Earth curvature correction applied to Z.
+    This is the same method used in main_coverage.py for consistency.
+    
+    Returns:
+        X_m: East-West distance in meters (1D array)
+        Y_m: North-South distance in meters (1D array)
+        Z_corrected: Terrain elevation corrected for Earth curvature (2D array)
+        lats: Original latitudes (1D array)
+        lons: Original longitudes (1D array)
+    """
+    if HAS_CURVATURE_MODULES:
+        # Use the same loading function as main_coverage.py
+        return load_and_convert_to_enu(npz_file_path)
+    else:
+        # Fallback: Apply curvature correction manually
+        data = np.load(npz_file_path)
+        lats = data['lat'].astype(float)
+        lons = data['lon'].astype(float)
+        Z_terrain = data['ter'].astype(float)
+        
+        # Use Nice Airport as reference (same as geo_utils_earth_curvature)
+        ref_lat = 43.6584
+        ref_lon = 7.2159
+        
+        lat_ref_rad = np.radians(ref_lat)
+        meters_per_deg_lat = (np.pi / 180.0) * EARTH_RADIUS_M
+        meters_per_deg_lon = (np.pi / 180.0) * EARTH_RADIUS_M * np.cos(lat_ref_rad)
+        
+        Y_m = (lats - ref_lat) * meters_per_deg_lat
+        X_m = (lons - ref_lon) * meters_per_deg_lon
+        
+        # Apply Earth curvature correction to terrain
+        X_grid, Y_grid = np.meshgrid(X_m, Y_m)
+        dist_sq = X_grid**2 + Y_grid**2
+        curvature_drop = dist_sq / (2.0 * EARTH_RADIUS_M)
+        Z_corrected = Z_terrain - curvature_drop
+        
+        return X_m, Y_m, Z_corrected, lats, lons
+
+
 def convert_to_enu(lats, lons, ref_lat, ref_lon):
+    """Convert lat/lon to ENU meters (legacy function for visualization)."""
     lat_ref_rad = np.radians(ref_lat)
     meters_per_deg_lat = (np.pi / 180.0) * EARTH_RADIUS_M
     meters_per_deg_lon = (np.pi / 180.0) * EARTH_RADIUS_M * np.cos(lat_ref_rad)
@@ -227,6 +282,7 @@ def convert_to_enu(lats, lons, ref_lat, ref_lon):
 
 
 def normalize_xy_grid(X_m, Y_m, Z):
+    """Ensure X_m and Y_m are strictly increasing, reorder Z accordingly."""
     X_m = np.asarray(X_m)
     Y_m = np.asarray(Y_m)
     Z = np.asarray(Z)
@@ -239,23 +295,73 @@ def normalize_xy_grid(X_m, Y_m, Z):
     return np.ascontiguousarray(X_m), np.ascontiguousarray(Y_m), np.ascontiguousarray(Z)
 
 
+def normalize_all(X_m, Y_m, Z, lats, lons):
+    """
+    Ensure X_m and Y_m are strictly increasing (monotonic).
+    Applies the necessary flips to Z, lats, and lons to maintain alignment.
+    Returns contiguous arrays for Numba performance.
+    (Same as main_coverage.py)
+    """
+    X_m = np.asarray(X_m)
+    Y_m = np.asarray(Y_m)
+    Z = np.asarray(Z)
+    lats = np.asarray(lats)
+    lons = np.asarray(lons)
+
+    # Check Y axis (North-South)
+    if Y_m[0] > Y_m[-1]:
+        Y_m = Y_m[::-1].copy()
+        lats = lats[::-1].copy()
+        Z = Z[::-1, :].copy()
+
+    # Check X axis (East-West)
+    if X_m[0] > X_m[-1]:
+        X_m = X_m[::-1].copy()
+        lons = lons[::-1].copy()
+        Z = Z[:, ::-1].copy()
+    
+    return (np.ascontiguousarray(X_m), 
+            np.ascontiguousarray(Y_m), 
+            np.ascontiguousarray(Z), 
+            np.ascontiguousarray(lats), 
+            np.ascontiguousarray(lons))
+
+
 # ============================================================================
-# COVERAGE COMPUTATION
+# COVERAGE COMPUTATION (WITH EARTH CURVATURE CORRECTION)
 # ============================================================================
 
 def fl_to_m(FL):
+    """Convert Flight Level to meters."""
+    if HAS_CURVATURE_MODULES:
+        return los_fl_to_m(FL)
     return FL * 100.0 * 0.3048
 
 
-def latlon_to_xy_m(lat, lon, ref_lat, ref_lon):
-    lat_ref_rad = np.radians(ref_lat)
-    meters_per_deg_lat = (np.pi / 180.0) * EARTH_RADIUS_M
-    meters_per_deg_lon = (np.pi / 180.0) * EARTH_RADIUS_M * np.cos(lat_ref_rad)
-    y = (float(lat) - float(ref_lat)) * meters_per_deg_lat
-    x = (float(lon) - float(ref_lon)) * meters_per_deg_lon
-    return x, y
+def latlon_to_xy_m(lat, lon, ref_lat=None, ref_lon=None):
+    """
+    Convert lat/lon to ENU meters.
+    When curvature modules are available, uses the fixed reference point
+    (Nice Airport) for consistency with main_coverage.py.
+    """
+    if HAS_CURVATURE_MODULES:
+        # Use the same conversion as LOS_numba_enu (fixed reference point)
+        return los_latlon_to_xy_m(lat, lon)
+    else:
+        # Fallback: use provided ref or defaults
+        if ref_lat is None:
+            ref_lat = 43.6584
+        if ref_lon is None:
+            ref_lon = 7.2159
+        lat_ref_rad = np.radians(ref_lat)
+        meters_per_deg_lat = (np.pi / 180.0) * EARTH_RADIUS_M
+        meters_per_deg_lon = (np.pi / 180.0) * EARTH_RADIUS_M * np.cos(lat_ref_rad)
+        y = (float(lat) - float(ref_lat)) * meters_per_deg_lat
+        x = (float(lon) - float(ref_lon)) * meters_per_deg_lon
+        return x, y
 
 
+# Legacy Numba functions (fallback when curvature modules not available)
 if HAS_NUMBA:
     @njit
     def z_bilinear(x, y, x0, y0, dx, dy, Z):
@@ -279,30 +385,50 @@ if HAS_NUMBA:
         return (1.0 - t) * z0 + t * z1
 
     @njit
-    def los_check(radar_x, radar_y, radar_h, target_x, target_y, target_alt, x0, y0, dx, dy, Z, n_samples, margin):
-        z_r = z_bilinear(radar_x, radar_y, x0, y0, dx, dy, Z)
+    def los_check_with_curvature(radar_x, radar_y, radar_h, target_x, target_y, target_alt_msl, 
+                                  x0, y0, dx, dy, Z_corrected, n_samples, margin, earth_radius):
+        """
+        LOS check with Earth curvature correction on target altitude.
+        Z_corrected: terrain already has curvature drop applied.
+        target_alt_msl: must also have curvature drop applied.
+        """
+        z_r = z_bilinear(radar_x, radar_y, x0, y0, dx, dy, Z_corrected)
         if np.isnan(z_r):
             return False
         z_radar = z_r + radar_h
+        
+        # Apply curvature drop to target altitude (same as LOS_numba_enu.py)
+        dist_sq_target = target_x**2 + target_y**2
+        drop_target = dist_sq_target / (2.0 * earth_radius)
+        z_target_enu = target_alt_msl - drop_target
+        
         for k in range(1, n_samples):
             s = k / n_samples
             x = radar_x + s * (target_x - radar_x)
             y = radar_y + s * (target_y - radar_y)
-            z_g = z_bilinear(x, y, x0, y0, dx, dy, Z)
+            z_g = z_bilinear(x, y, x0, y0, dx, dy, Z_corrected)
             if np.isnan(z_g):
                 return False
-            z_line = z_radar + s * (target_alt - z_radar)
+            z_line = z_radar + s * (z_target_enu - z_radar)
             if z_g + margin >= z_line:
                 return False
         return True
 
     @njit(parallel=True)
-    def compute_coverage(radar_x, radar_y, radar_h, target_alt, X_m, Y_m, x0, y0, dx, dy, Z, n_samples, margin):
+    def compute_coverage_with_curvature(radar_x, radar_y, radar_h, target_alt_msl, X_m, Y_m, 
+                                         x0, y0, dx, dy, Z_corrected, n_samples, margin, earth_radius):
+        """
+        Coverage computation with Earth curvature correction.
+        This matches the physics in LOS_numba_enu.py / main_coverage.py.
+        """
         N, M = Y_m.size, X_m.size
         out = np.zeros((N, M), dtype=np.bool_)
         for i in prange(N):
             for j in range(M):
-                out[i, j] = los_check(radar_x, radar_y, radar_h, X_m[j], Y_m[i], target_alt, x0, y0, dx, dy, Z, n_samples, margin)
+                out[i, j] = los_check_with_curvature(
+                    radar_x, radar_y, radar_h, X_m[j], Y_m[i], target_alt_msl,
+                    x0, y0, dx, dy, Z_corrected, n_samples, margin, earth_radius
+                )
         return out
 else:
     def z_bilinear(x, y, x0, y0, dx, dy, Z):
@@ -321,25 +447,35 @@ else:
         z1 = (1.0 - u) * Z[i0 + 1, j0] + u * Z[i0 + 1, j0 + 1]
         return (1.0 - t) * z0 + t * z1
 
-    def compute_coverage(radar_x, radar_y, radar_h, target_alt, X_m, Y_m, x0, y0, dx, dy, Z, n_samples, margin):
+    def compute_coverage_with_curvature(radar_x, radar_y, radar_h, target_alt_msl, X_m, Y_m,
+                                         x0, y0, dx, dy, Z_corrected, n_samples, margin, earth_radius):
+        """Fallback non-Numba version with curvature correction."""
         N, M = Y_m.size, X_m.size
         out = np.zeros((N, M), dtype=np.bool_)
-        z_r = z_bilinear(radar_x, radar_y, x0, y0, dx, dy, Z)
+        z_r = z_bilinear(radar_x, radar_y, x0, y0, dx, dy, Z_corrected)
         if np.isnan(z_r):
             return out
         z_radar = z_r + radar_h
+        
         for i in range(N):
             for j in range(M):
+                target_x, target_y = X_m[j], Y_m[i]
+                
+                # Apply curvature drop to target altitude
+                dist_sq_target = target_x**2 + target_y**2
+                drop_target = dist_sq_target / (2.0 * earth_radius)
+                z_target_enu = target_alt_msl - drop_target
+                
                 visible = True
                 for k in range(1, n_samples):
                     s = k / n_samples
-                    x = radar_x + s * (X_m[j] - radar_x)
-                    y = radar_y + s * (Y_m[i] - radar_y)
-                    z_g = z_bilinear(x, y, x0, y0, dx, dy, Z)
+                    x = radar_x + s * (target_x - radar_x)
+                    y = radar_y + s * (target_y - radar_y)
+                    z_g = z_bilinear(x, y, x0, y0, dx, dy, Z_corrected)
                     if np.isnan(z_g):
                         visible = False
                         break
-                    z_line = z_radar + s * (target_alt - z_radar)
+                    z_line = z_radar + s * (z_target_enu - z_radar)
                     if z_g + margin >= z_line:
                         visible = False
                         break
@@ -347,22 +483,74 @@ else:
         return out
 
 
-def compute_fl_coverage(radar_lat, radar_lon, radar_h, fl, X_m, Y_m, Z, ref_lat, ref_lon, n_samples=400, margin=0.0):
-    radar_x, radar_y = latlon_to_xy_m(radar_lat, radar_lon, ref_lat, ref_lon)
-    x0, y0 = float(X_m[0]), float(Y_m[0])
-    dx = float(X_m[1] - X_m[0]) if len(X_m) > 1 else 1.0
-    dy = float(Y_m[1] - Y_m[0]) if len(Y_m) > 1 else 1.0
-    return compute_coverage(float(radar_x), float(radar_y), float(radar_h), float(fl_to_m(fl)),
-                            X_m, Y_m, x0, y0, dx, dy, Z, int(n_samples), float(margin))
+def compute_fl_coverage_curvature(radar_lat, radar_lon, radar_h, fl, X_m, Y_m, Z_corrected, n_samples=400, margin=0.0):
+    """
+    Compute coverage for a single FL using Earth curvature-corrected algorithms.
+    This matches main_coverage.py exactly.
+    
+    Args:
+        radar_lat, radar_lon: Radar position in degrees
+        radar_h: Radar height above ground level in meters
+        fl: Flight level (e.g., 50 = FL050 = 5000 ft)
+        X_m, Y_m: Grid axes in ENU meters (already curvature-corrected)
+        Z_corrected: Terrain elevation with curvature drop applied
+        n_samples: Number of samples along LOS ray
+        margin: Safety margin in meters
+    """
+    if HAS_CURVATURE_MODULES:
+        # Use the exact same function as main_coverage.py
+        radar_x, radar_y = los_latlon_to_xy_m(radar_lat, radar_lon)
+        x0 = float(X_m[0])
+        y0 = float(Y_m[0])
+        dx = float(X_m[1] - X_m[0]) if len(X_m) > 1 else 1.0
+        dy = float(Y_m[1] - Y_m[0]) if len(Y_m) > 1 else 1.0
+        target_alt_msl = float(los_fl_to_m(fl))
+        
+        return coverage_map_numba_xy(
+            float(radar_x), float(radar_y), float(radar_h),
+            target_alt_msl,
+            X_m, Y_m,
+            x0, y0, dx, dy, Z_corrected,
+            int(n_samples), float(margin)
+        )
+    else:
+        # Fallback using local curvature-corrected functions
+        radar_x, radar_y = latlon_to_xy_m(radar_lat, radar_lon)
+        x0 = float(X_m[0])
+        y0 = float(Y_m[0])
+        dx = float(X_m[1] - X_m[0]) if len(X_m) > 1 else 1.0
+        dy = float(Y_m[1] - Y_m[0]) if len(Y_m) > 1 else 1.0
+        target_alt_msl = float(fl_to_m(fl))
+        
+        return compute_coverage_with_curvature(
+            float(radar_x), float(radar_y), float(radar_h), target_alt_msl,
+            X_m, Y_m, x0, y0, dx, dy, Z_corrected, int(n_samples), float(margin),
+            EARTH_RADIUS_M
+        )
 
 
-def compute_all_fl(radar_lat, radar_lon, radar_h, fls, X_m, Y_m, Z, ref_lat, ref_lon, n_samples=400, margin=0.0, callback=None):
+def compute_all_fl_curvature(radar_lat, radar_lon, radar_h, fls, X_m, Y_m, Z_corrected, n_samples=400, margin=0.0, callback=None):
+    """
+    Compute coverage for all flight levels using Earth curvature correction.
+    This is the main function to use for consistency with main_coverage.py.
+    """
     maps = {}
     for i, fl in enumerate(fls):
-        maps[fl] = compute_fl_coverage(radar_lat, radar_lon, radar_h, fl, X_m, Y_m, Z, ref_lat, ref_lon, n_samples, margin)
+        maps[fl] = compute_fl_coverage_curvature(radar_lat, radar_lon, radar_h, fl, X_m, Y_m, Z_corrected, n_samples, margin)
         if callback:
             callback((i + 1) / len(fls))
     return maps
+
+
+# Keep legacy functions for backward compatibility (but they should not be used)
+def compute_fl_coverage(radar_lat, radar_lon, radar_h, fl, X_m, Y_m, Z, ref_lat, ref_lon, n_samples=400, margin=0.0):
+    """Legacy function - use compute_fl_coverage_curvature instead for accurate results."""
+    return compute_fl_coverage_curvature(radar_lat, radar_lon, radar_h, fl, X_m, Y_m, Z, n_samples, margin)
+
+
+def compute_all_fl(radar_lat, radar_lon, radar_h, fls, X_m, Y_m, Z, ref_lat, ref_lon, n_samples=400, margin=0.0, callback=None):
+    """Legacy function - use compute_all_fl_curvature instead for accurate results."""
+    return compute_all_fl_curvature(radar_lat, radar_lon, radar_h, fls, X_m, Y_m, Z, n_samples, margin, callback)
 
 
 # ============================================================================
@@ -694,6 +882,157 @@ def plot_coverage_large(
 
 
 
+def plot_all_coverage_grid(
+    maps,
+    lats,
+    lons,
+    terrain=None,
+    radar_lat=None,
+    radar_lon=None,
+    bg="relief",
+    basemap_provider="carto",
+    basemap_labels=False,
+    show_blocked=True,
+    green_alpha=0.5,
+    red_alpha=0.3,
+    figsize=(24, 12),
+):
+    """
+    Create a single figure with all 8 flight levels in a 4x2 grid.
+    Always shows all 8 standard FLs: 5, 10, 20, 50, 100, 200, 300, 400.
+    Layout: 4 columns x 2 rows.
+    """
+    # Always use all 8 standard FLs
+    all_fls = [5, 10, 20, 50, 100, 200, 300, 400]
+    
+    # Fixed layout: 2 rows x 4 columns
+    n_rows, n_cols = 2, 4
+    
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=figsize)
+    fig.patch.set_facecolor(BG_PANEL)
+    
+    axes_flat = axes.flatten()
+    
+    extent = [lons.min(), lons.max(), lats.min(), lats.max()]
+    
+    # Coverage colors
+    if show_blocked:
+        colors = [
+            (*[int(BLOCKED_AREA[i:i+2], 16)/255 for i in (1, 3, 5)], red_alpha),
+            (*[int(COVERAGE_VISIBLE[i:i+2], 16)/255 for i in (1, 3, 5)], green_alpha),
+        ]
+    else:
+        colors = [
+            (0, 0, 0, 0),
+            (*[int(COVERAGE_VISIBLE[i:i+2], 16)/255 for i in (1, 3, 5)], green_alpha),
+        ]
+    cmap = ListedColormap(colors)
+    
+    for idx, fl in enumerate(all_fls):
+        ax = axes_flat[idx]
+        ax.set_facecolor(BG_PANEL)
+        
+        # Check if we have coverage data for this FL
+        if fl in maps:
+            cov = maps[fl]
+            
+            # Background
+            if bg == "relief" and terrain is not None:
+                ax.imshow(
+                    colored_relief(terrain),
+                    aspect='auto', origin='lower', extent=extent,
+                    interpolation='bilinear'
+                )
+            elif bg == "basemap":
+                try:
+                    _add_basemap(ax, extent, provider=basemap_provider, add_labels=basemap_labels)
+                except Exception:
+                    if terrain is not None:
+                        ax.imshow(colored_relief(terrain), aspect='auto', origin='lower', extent=extent, interpolation='bilinear')
+            
+            # Coverage overlay
+            ax.imshow(
+                cov.astype(float),
+                cmap=cmap,
+                aspect='auto',
+                origin='lower',
+                extent=extent,
+                interpolation='nearest',
+                vmin=0, vmax=1,
+                zorder=2
+            )
+            
+            # Coverage percentage
+            pct = np.sum(cov) / cov.size * 100
+            ax.text(
+                0.02, 0.98, f'{pct:.1f}%', transform=ax.transAxes, fontsize=12, va='top',
+                color=TEXT_PRIMARY, fontweight='700',
+                bbox=dict(boxstyle='round,pad=0.3', facecolor=BG_PANEL, alpha=0.9, edgecolor=BORDER_COLOR)
+            )
+        else:
+            # No data for this FL - show terrain only with "Not computed" label
+            if bg == "relief" and terrain is not None:
+                ax.imshow(
+                    colored_relief(terrain),
+                    aspect='auto', origin='lower', extent=extent,
+                    interpolation='bilinear'
+                )
+            elif bg == "basemap":
+                try:
+                    _add_basemap(ax, extent, provider=basemap_provider, add_labels=basemap_labels)
+                except Exception:
+                    if terrain is not None:
+                        ax.imshow(colored_relief(terrain), aspect='auto', origin='lower', extent=extent, interpolation='bilinear')
+            
+            ax.text(
+                0.5, 0.5, 'Not computed', transform=ax.transAxes, fontsize=14, 
+                ha='center', va='center', color=TEXT_SECONDARY, fontweight='600',
+                bbox=dict(boxstyle='round,pad=0.5', facecolor=BG_PANEL, alpha=0.9, edgecolor=BORDER_COLOR)
+            )
+        
+        # Markers (always show)
+        if radar_lat is not None and radar_lon is not None:
+            ax.plot(radar_lon, radar_lat, '*', color=ACCENT_PRIMARY, markersize=14,
+                    markeredgecolor='white', markeredgewidth=1.2, zorder=10)
+        
+        ax.plot(AIRPORT_LON, AIRPORT_LAT, '^', color=TEXT_PRIMARY, markersize=11,
+                markeredgecolor='black', markeredgewidth=0.8, zorder=10)
+        
+        # Title with FL and altitude
+        alt_m = fl_to_m(fl)
+        ax.set_title(f'FL{int(fl)} ({alt_m:.0f}m)', fontsize=14, fontweight='700', color=ACCENT_PRIMARY, pad=10)
+        
+        # Axis styling
+        ax.tick_params(colors=TEXT_SECONDARY, labelsize=9)
+        for spine in ax.spines.values():
+            spine.set_color(BORDER_COLOR)
+    
+    # Add overall title
+    fig.suptitle(
+        'Radar Coverage Analysis - All Flight Levels',
+        fontsize=18, fontweight='700', color=TEXT_PRIMARY, y=0.98
+    )
+    
+    # Add legend for the whole figure
+    from matplotlib.patches import Patch
+    legend_elements = [
+        Patch(facecolor=COVERAGE_VISIBLE, alpha=green_alpha, label='Visible'),
+        plt.Line2D([0], [0], marker='*', color='w', markerfacecolor=ACCENT_PRIMARY, 
+                   markersize=14, label='Radar', markeredgecolor='white'),
+        plt.Line2D([0], [0], marker='^', color='w', markerfacecolor=TEXT_PRIMARY, 
+                   markersize=11, label='Airport', markeredgecolor='black'),
+    ]
+    if show_blocked:
+        legend_elements.insert(1, Patch(facecolor=BLOCKED_AREA, alpha=red_alpha, label='Blocked'))
+    
+    fig.legend(handles=legend_elements, loc='lower center', ncol=len(legend_elements),
+               fontsize=11, facecolor=BG_PANEL, edgecolor=BORDER_COLOR, labelcolor=TEXT_PRIMARY,
+               bbox_to_anchor=(0.5, 0.01))
+    
+    plt.tight_layout(rect=[0, 0.05, 1, 0.95])
+    return fig
+
+
 def create_png_zip(
     maps,
     lats,
@@ -701,6 +1040,7 @@ def create_png_zip(
     terrain,
     radar_lat,
     radar_lon,
+    radar_h,
     bg,
     show_blocked,
     green_alpha,
@@ -709,10 +1049,22 @@ def create_png_zip(
     basemap_labels=False,
     fls_to_export=None,
     dpi=150,
+    X_m=None,
+    Y_m=None,
+    n_samples=200,
+    margin=0.0,
 ):
+    """
+    Create a ZIP file with PNG coverage maps.
+    
+    The combined image always shows all 8 standard FLs.
+    Missing FLs are computed on-the-fly.
+    """
     buf = BytesIO()
     with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zf:
         fls = sorted(maps.keys()) if fls_to_export is None else list(fls_to_export)
+        
+        # Individual FL images (only for selected FLs)
         for fl in fls:
             fig = plot_coverage_large(
                 cov=maps[fl],
@@ -734,6 +1086,42 @@ def create_png_zip(
             plt.close(fig)
             img_buf.seek(0)
             zf.writestr(f'coverage_FL{int(fl)}.png', img_buf.getvalue())
+        
+        # Combined grid image with ALL 8 FLs (always computed)
+        all_fls = [5, 10, 20, 50, 100, 200, 300, 400]
+        maps_all = dict(maps)  # Copy existing maps
+        
+        # Compute missing FLs if we have the required data
+        if X_m is not None and Y_m is not None:
+            missing_fls = [fl for fl in all_fls if fl not in maps_all]
+            for fl in missing_fls:
+                cov = compute_fl_coverage_curvature(
+                    radar_lat, radar_lon, radar_h, fl,
+                    X_m, Y_m, terrain,
+                    n_samples=n_samples, margin=margin
+                )
+                maps_all[fl] = cov
+        
+        fig_grid = plot_all_coverage_grid(
+            maps=maps_all,
+            lats=lats,
+            lons=lons,
+            terrain=terrain,
+            radar_lat=radar_lat,
+            radar_lon=radar_lon,
+            bg=bg,
+            basemap_provider=basemap_provider,
+            basemap_labels=basemap_labels,
+            show_blocked=show_blocked,
+            green_alpha=green_alpha,
+            red_alpha=red_alpha,
+        )
+        img_buf_grid = BytesIO()
+        fig_grid.savefig(img_buf_grid, format='png', dpi=dpi, bbox_inches='tight', facecolor=BG_PANEL)
+        plt.close(fig_grid)
+        img_buf_grid.seek(0)
+        zf.writestr('coverage_ALL_FLs.png', img_buf_grid.getvalue())
+    
     return buf.getvalue()
 
 
@@ -845,15 +1233,46 @@ def main():
         terrain_data = None
         if uploaded:
             try:
+                # Load raw terrain for visualization
                 lats, lons, Z = load_terrain_npz(uploaded)
-                terrain_data = {'lats': lats, 'lons': lons, 'Z': Z}
+                # For uploaded files, apply curvature correction manually
+                # (since load_terrain_with_curvature expects a file path)
+                ref_lat_corr = 43.6584  # Nice Airport (same as geo_utils_earth_curvature)
+                ref_lon_corr = 7.2159
+                lat_ref_rad = np.radians(ref_lat_corr)
+                meters_per_deg_lat = (np.pi / 180.0) * EARTH_RADIUS_M
+                meters_per_deg_lon = (np.pi / 180.0) * EARTH_RADIUS_M * np.cos(lat_ref_rad)
+                Y_m_corr = (lats - ref_lat_corr) * meters_per_deg_lat
+                X_m_corr = (lons - ref_lon_corr) * meters_per_deg_lon
+                X_grid, Y_grid = np.meshgrid(X_m_corr, Y_m_corr)
+                dist_sq = X_grid**2 + Y_grid**2
+                curvature_drop = dist_sq / (2.0 * EARTH_RADIUS_M)
+                Z_corrected = Z - curvature_drop
+                X_m_corr, Y_m_corr, Z_corrected, lats_norm, lons_norm = normalize_all(
+                    X_m_corr, Y_m_corr, Z_corrected, lats, lons
+                )
+                terrain_data = {
+                    'lats': lats, 'lons': lons, 'Z': Z,
+                    'X_m': X_m_corr, 'Y_m': Y_m_corr, 'Z_corrected': Z_corrected,
+                    'lats_norm': lats_norm, 'lons_norm': lons_norm
+                }
             except Exception as e:
                 st.error(f"Error loading terrain: {e}")
         elif use_sample:
             sample_path = Path(__file__).parent / "terrain_mat.npz"
             if sample_path.exists():
-                lats, lons, Z = load_terrain_npz(str(sample_path))
-                terrain_data = {'lats': lats, 'lons': lons, 'Z': Z}
+                # Load with curvature correction (same as main_coverage.py)
+                X_m_corr, Y_m_corr, Z_corrected, lats, lons = load_terrain_with_curvature(str(sample_path))
+                X_m_corr, Y_m_corr, Z_corrected, lats_norm, lons_norm = normalize_all(
+                    X_m_corr, Y_m_corr, Z_corrected, lats, lons
+                )
+                # Also load raw Z for visualization
+                lats_raw, lons_raw, Z_raw = load_terrain_npz(str(sample_path))
+                terrain_data = {
+                    'lats': lats_raw, 'lons': lons_raw, 'Z': Z_raw,
+                    'X_m': X_m_corr, 'Y_m': Y_m_corr, 'Z_corrected': Z_corrected,
+                    'lats_norm': lats_norm, 'lons_norm': lons_norm
+                }
         
         if terrain_data:
             lats, lons, Z = terrain_data['lats'], terrain_data['lons'], terrain_data['Z']
@@ -863,12 +1282,6 @@ def main():
                 radar_lat = st.number_input("Latitude", value=DEFAULT_REF_LAT, format="%.6f")
                 radar_lon = st.number_input("Longitude", value=DEFAULT_REF_LON, format="%.6f")
                 radar_h = st.number_input("Height (m AGL)", value=20.0, min_value=0.0)
-            
-            # Reference coordinates (derived from radar position by default)
-            ref_lat = radar_lat
-            ref_lon = radar_lon
-            X_m, Y_m = convert_to_enu(lats, lons, ref_lat, ref_lon)
-            X_m, Y_m, Z_enu = normalize_xy_grid(X_m, Y_m, Z.copy())
             
             # Flight Levels Expander
             with st.expander("Flight Levels", expanded=True):
@@ -905,13 +1318,15 @@ def main():
     # =========================================================================
     
     if terrain_data:
+        # Raw terrain for visualization
         lats, lons, Z = terrain_data['lats'], terrain_data['lons'], terrain_data['Z']
         
-        # Reference coordinates (derived from radar position)
-        ref_lat = radar_lat
-        ref_lon = radar_lon
-        X_m, Y_m = convert_to_enu(lats, lons, ref_lat, ref_lon)
-        X_m, Y_m, Z_enu = normalize_xy_grid(X_m, Y_m, Z.copy())
+        # Curvature-corrected terrain for coverage computation (same as main_coverage.py)
+        X_m = terrain_data['X_m']
+        Y_m = terrain_data['Y_m']
+        Z_corrected = terrain_data['Z_corrected']
+        lats_norm = terrain_data['lats_norm']
+        lons_norm = terrain_data['lons_norm']
         
         # Initialize selected_overview_fl if not set
         if 'selected_overview_fl' not in st.session_state:
@@ -976,21 +1391,34 @@ def main():
             )
         
         # Handle coverage computation (triggered from main button or sidebar)
+        # Uses Earth curvature-corrected algorithms (same as main_coverage.py)
         if (main_compute or sidebar_compute) and selected_fls:
             prog = st.progress(0)
             stat = st.empty()
             def upd(p):
                 prog.progress(p)
-                stat.text(f"Computing... {p*100:.0f}%")
-            maps = compute_all_fl(radar_lat, radar_lon, radar_h, sorted(selected_fls), X_m, Y_m, Z_enu, ref_lat, ref_lon, n_samples, margin, upd)
+                stat.text(f"Computing with Earth curvature correction... {p*100:.0f}%")
+            # Use curvature-corrected terrain (Z_corrected) for computation
+            maps = compute_all_fl_curvature(
+                radar_lat, radar_lon, radar_h, 
+                sorted(selected_fls), 
+                X_m, Y_m, Z_corrected,  # Using curvature-corrected terrain
+                n_samples, margin, upd
+            )
             st.session_state.coverage_maps = maps
             st.session_state.coverage_computed = True
-            st.session_state.coverage_lats = lats
-            st.session_state.coverage_lons = lons
-            st.session_state.coverage_terrain = Z
+            # Store normalized lats/lons that match Z_corrected orientation
+            st.session_state.coverage_lats = lats_norm
+            st.session_state.coverage_lons = lons_norm
+            st.session_state.coverage_terrain = Z_corrected  # Store curvature-corrected terrain
             st.session_state.radar_lat = radar_lat
             st.session_state.radar_lon = radar_lon
             st.session_state.radar_h = radar_h
+            # Store grid data for computing additional FLs in export
+            st.session_state.X_m = X_m
+            st.session_state.Y_m = Y_m
+            st.session_state.n_samples = n_samples
+            st.session_state.margin = margin
             st.session_state.expanded_fl = None
             prog.progress(1.0)
             stat.text("Done!")
@@ -1175,7 +1603,8 @@ def main():
                     st.session_state.coverage_lons,
                     st.session_state.coverage_terrain, 
                     st.session_state.radar_lat,
-                    st.session_state.radar_lon, 
+                    st.session_state.radar_lon,
+                    st.session_state.radar_h,
                     bg=png_plot_bg,
                     show_blocked=png_show_blocked,
                     green_alpha=png_green_alpha,
@@ -1184,6 +1613,10 @@ def main():
                     basemap_labels=png_basemap_labels,
                     fls_to_export=png_fls,
                     dpi=png_dpi,
+                    X_m=st.session_state.X_m,
+                    Y_m=st.session_state.Y_m,
+                    n_samples=st.session_state.n_samples,
+                    margin=st.session_state.margin,
                 )
                 st.download_button(
                     "Download PNG (ZIP)",
