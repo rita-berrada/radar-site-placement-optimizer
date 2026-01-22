@@ -1,93 +1,225 @@
-# Modelling_Radar_Thales
+# Radar Coverage Analysis Software
 
+A comprehensive radar coverage analysis tool for computing and visualizing line-of-sight (LOS) coverage maps over terrain data.
 
+## Features
 
-## Getting started
+### Core Functionality
 
-To make it easy for you to get started with GitLab, here's a list of recommended next steps.
-
-Already a pro? Just edit this README.md and make it your own. Want to make it easy? [Use the template at the bottom](#editing-this-readme)!
-
-## Add your files
-
-- [ ] [Create](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#create-a-file) or [upload](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#upload-a-file) files
-- [ ] [Add files using the command line](https://docs.gitlab.com/topics/git/add_files/#add-files-to-a-git-repository) or push an existing Git repository with the following command:
-
-```
-cd existing_repo
-git remote add origin https://gitlab-student.centralesupelec.fr/soraya.essekkat/modelling_radar_thales.git
-git branch -M main
-git push -uf origin main
-```
-
-## Integrate with your tools
-
-- [ ] [Set up project integrations](https://gitlab-student.centralesupelec.fr/soraya.essekkat/modelling_radar_thales/-/settings/integrations)
-
-## Collaborate with your team
-
-- [ ] [Invite team members and collaborators](https://docs.gitlab.com/ee/user/project/members/)
-- [ ] [Create a new merge request](https://docs.gitlab.com/ee/user/project/merge_requests/creating_merge_requests.html)
-- [ ] [Automatically close issues from merge requests](https://docs.gitlab.com/ee/user/project/issues/managing_issues.html#closing-issues-automatically)
-- [ ] [Enable merge request approvals](https://docs.gitlab.com/ee/user/project/merge_requests/approvals/)
-- [ ] [Set auto-merge](https://docs.gitlab.com/user/project/merge_requests/auto_merge/)
-
-## Test and Deploy
-
-Use the built-in continuous integration in GitLab.
-
-- [ ] [Get started with GitLab CI/CD](https://docs.gitlab.com/ee/ci/quick_start/)
-- [ ] [Analyze your code for known vulnerabilities with Static Application Security Testing (SAST)](https://docs.gitlab.com/ee/user/application_security/sast/)
-- [ ] [Deploy to Kubernetes, Amazon EC2, or Amazon ECS using Auto Deploy](https://docs.gitlab.com/ee/topics/autodevops/requirements.html)
-- [ ] [Use pull-based deployments for improved Kubernetes management](https://docs.gitlab.com/ee/user/clusters/agent/)
-- [ ] [Set up protected environments](https://docs.gitlab.com/ee/ci/environments/protected_environments.html)
-
-***
-
-# Editing this README
-
-When you're ready to make this README your own, just edit this file and use the handy template below (or feel free to structure it however you want - this is just a starting point!). Thanks to [makeareadme.com](https://www.makeareadme.com/) for this template.
-
-## Suggestions for a good README
-
-Every project is different, so consider which of these sections apply to yours. The sections used in the template are suggestions for most open source projects. Also keep in mind that while a README can be too long and detailed, too long is better than too short. If you think your README is too long, consider utilizing another form of documentation rather than cutting out information.
-
-## Name
-Choose a self-explaining name for your project.
-
-## Description
-Let people know what your project can do specifically. Provide context and add a link to any reference visitors might be unfamiliar with. A list of Features or a Background subsection can also be added here. If there are alternatives to your project, this is a good place to list differentiating factors.
-
-## Badges
-On some READMEs, you may see small images that convey metadata, such as whether or not all the tests are passing for the project. You can use Shields to add some to your README. Many services also have instructions for adding a badge.
-
-## Visuals
-Depending on what you are making, it can be a good idea to include screenshots or even a video (you'll frequently see GIFs rather than actual videos). Tools like ttygif can help, but check out Asciinema for a more sophisticated method.
+- **Terrain Visualization**: Display terrain elevation data in 2D contour maps and interactive 3D surface plots
+- **Coverage Analysis**: Compute radar visibility for multiple Flight Levels (FL) using optimized Numba-accelerated LOS calculations
+- **Multiple Background Options**: Visualize coverage with various backgrounds:
+  - Colored terrain relief with hillshading
+  - Grayscale hillshade
+  - OpenStreetMap/CartoDB basemap tiles (Google Maps-like)
+  - Combined basemap + terrain relief
+- **KMZ Export**: Export coverage results to KMZ format for Google Earth visualization
+- **NPZ Export**: Save coverage data for further analysis
 
 ## Installation
-Within a particular ecosystem, there may be a common way of installing things, such as using Yarn, NuGet, or Homebrew. However, consider the possibility that whoever is reading your README is a novice and would like more guidance. Listing specific steps helps remove ambiguity and gets people to using your project as quickly as possible. If it only runs in a specific context like a particular programming language version or operating system or has dependencies that have to be installed manually, also add a Requirements subsection.
+
+### Prerequisites
+
+- Python 3.8 or higher
+- pip package manager
+
+### Setup
+
+1. Clone the repository:
+```bash
+git clone https://gitlab-student.centralesupelec.fr/soraya.essekkat/modelling_radar_thales.git
+cd modelling_radar_thales
+```
+
+2. Install dependencies:
+```bash
+pip install -r requirements.txt
+```
+
+### Dependencies
+
+- **numpy**: Array operations and terrain data handling
+- **matplotlib**: Visualization and plotting
+- **streamlit**: Web application framework
+- **numba**: JIT compilation for performance (highly recommended)
+- **contextily**: Basemap tiles (optional, for Google Maps-like backgrounds)
 
 ## Usage
-Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably include in the README.
 
-## Support
-Tell people where they can go to for help. It can be any combination of an issue tracker, a chat room, an email address, etc.
+### Web Application (Streamlit)
 
-## Roadmap
-If you have ideas for releases in the future, it is a good idea to list them in the README.
+Launch the interactive web interface:
 
-## Contributing
-State if you are open to contributions and what your requirements are for accepting them.
+```bash
+streamlit run radar_coverage_app.py
+```
 
-For people who want to make changes to your project, it's helpful to have some documentation on how to get started. Perhaps there is a script that they should run or some environment variables that they need to set. Make these steps explicit. These instructions could also be useful to your future self.
+The application provides:
+1. **Terrain View Tab**: 2D and 3D terrain visualization
+2. **Coverage Analysis Tab**: Configure and compute coverage for selected Flight Levels
+3. **Results Tab**: View coverage maps with different backgrounds
+4. **Export Tab**: Download KMZ files for Google Earth
 
-You can also document commands to lint the code or run tests. These steps help to ensure high code quality and reduce the likelihood that the changes inadvertently break something. Having instructions for running tests is especially helpful if it requires external setup, such as starting a Selenium server for testing in a browser.
+### Command Line Interface
 
-## Authors and acknowledgment
-Show your appreciation to those who have contributed to the project.
+For batch processing or automated workflows:
+
+```bash
+# Basic usage with default settings
+python radar_coverage_cli.py terrain_mat.npz
+
+# Specify flight levels and export to KMZ
+python radar_coverage_cli.py terrain.npz --fl 10,50,100,200 --export-kmz
+
+# Visualize terrain only (no coverage computation)
+python radar_coverage_cli.py terrain.npz --visualize --no-coverage --show-3d
+
+# Custom radar position
+python radar_coverage_cli.py terrain.npz --radar-lat 43.70 --radar-lon 7.25 --radar-height 30
+
+# Save all figures to output directory
+python radar_coverage_cli.py terrain.npz --output ./results --save-figures --export-kmz --export-npz
+
+# Full options
+python radar_coverage_cli.py terrain.npz \
+    --fl 5,10,20,50,100,200 \
+    --radar-lat 43.6584 \
+    --radar-lon 7.2159 \
+    --radar-height 20 \
+    --n-samples 400 \
+    --background relief \
+    --output ./output \
+    --save-figures \
+    --export-kmz \
+    --export-npz \
+    --visualize
+```
+
+### CLI Options
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--radar-lat` | Radar latitude (degrees) | 43.6584 |
+| `--radar-lon` | Radar longitude (degrees) | 7.2159 |
+| `--radar-height` | Radar height AGL (meters) | 20.0 |
+| `--fl` | Flight levels (comma-separated) | 10,50,100,200 |
+| `--n-samples` | LOS ray samples | 400 |
+| `--margin` | Safety margin (meters) | 0.0 |
+| `--background` | Map background type | relief |
+| `--output` | Output directory | . |
+| `--export-kmz` | Export to KMZ | False |
+| `--export-npz` | Export coverage data | False |
+| `--save-figures` | Save PNG figures | False |
+| `--visualize` | Show interactive plots | False |
+| `--show-3d` | Include 3D terrain view | False |
+
+## Terrain Data Format
+
+The terrain NPZ file must contain:
+
+- `lat`: 1D array of latitude values (degrees, WGS84)
+- `lon`: 1D array of longitude values (degrees, WGS84)
+- `ter`: 2D array of terrain elevation (meters MSL), shape (len(lat), len(lon))
+
+Example:
+```python
+import numpy as np
+
+# Create sample terrain data
+lats = np.linspace(43.0, 44.0, 500)
+lons = np.linspace(6.5, 8.0, 600)
+terrain = np.random.rand(500, 600) * 1000  # Elevation in meters
+
+np.savez('my_terrain.npz', lat=lats, lon=lons, ter=terrain)
+```
+
+## Flight Levels
+
+The software supports 8 standard Flight Levels:
+- FL5 = 500 ft = ~152 m
+- FL10 = 1,000 ft = ~305 m
+- FL20 = 2,000 ft = ~610 m
+- FL50 = 5,000 ft = ~1,524 m
+- FL100 = 10,000 ft = ~3,048 m
+- FL200 = 20,000 ft = ~6,096 m
+- FL300 = 30,000 ft = ~9,144 m
+- FL400 = 40,000 ft = ~12,192 m
+
+Conversion: `altitude_meters = FL * 100 * 0.3048`
+
+## Project Structure
+
+```
+modelling_radar_thales/
+├── radar_coverage_app.py     # Main Streamlit web application
+├── radar_coverage_cli.py     # Command-line interface
+├── requirements.txt          # Python dependencies
+├── README.md                 # This file
+│
+├── # Core modules (used by the application):
+├── visualize_terrain.py      # Terrain visualization utilities
+├── LOS_numba_enu.py          # Numba-optimized LOS calculations
+├── coverage_analysis.py      # Coverage computation module
+├── visualize_coverage.py     # Coverage visualization utilities
+├── export_kml.py             # KML/KMZ export functionality
+├── geo_utils.py              # Geographic coordinate utilities
+│
+├── # Sample data:
+├── terrain_mat.npz           # Sample terrain data (Nice area)
+├── terrain_req01_50km.npz    # Extended terrain data
+│
+└── geographical_data/        # GeoJSON reference data
+    ├── buildings.geojson
+    ├── roads_nice_50km.geojson
+    └── protected_areas.geojson
+```
+
+## Algorithm
+
+The coverage analysis uses a Line-of-Sight (LOS) algorithm:
+
+1. **Terrain Loading**: Load elevation data and convert to ENU (East-North-Up) coordinates
+2. **Grid Normalization**: Ensure grid axes are properly ordered for interpolation
+3. **LOS Ray Tracing**: For each grid point at a given Flight Level:
+   - Cast a ray from radar to target point
+   - Sample terrain elevation along the ray
+   - Check if ray clears terrain at all sample points
+4. **Coverage Map**: Generate boolean map indicating visible (True) or blocked (False)
+
+The algorithm is optimized using Numba JIT compilation with parallel processing for significant performance improvements.
+
+## Output Formats
+
+### KMZ (Google Earth)
+- Polygons colored by visibility status (green=visible, red=blocked)
+- Radar position marker
+- Organized by Flight Level folders
+
+### PNG (Figures)
+- High-resolution coverage maps with terrain backgrounds
+- Coverage statistics overlay
+- Radar position marker
+
+### NPZ (Data)
+- Full coverage arrays for each Flight Level
+- Terrain and coordinate data
+- Radar parameters
+
+## Performance
+
+With Numba acceleration enabled:
+- ~500x500 grid: ~2-5 seconds per Flight Level
+- ~1000x1000 grid: ~10-20 seconds per Flight Level
+
+Without Numba (pure Python):
+- Significantly slower (10-100x)
+- Recommended only for small grids
 
 ## License
-For open source projects, say how it is licensed.
 
-## Project status
-If you have run out of energy or time for your project, put a note at the top of the README saying that development has slowed down or stopped completely. Someone may choose to fork your project or volunteer to step in as a maintainer or owner, allowing your project to keep going. You can also make an explicit request for maintainers.
+This project is developed for educational purposes at CentraleSupelec.
+
+## Authors
+
+- Radar Analysis Team
+- CentraleSupelec / Thales collaboration
