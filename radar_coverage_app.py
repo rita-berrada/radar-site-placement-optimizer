@@ -19,6 +19,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.colors import ListedColormap
 from matplotlib import cm
+from matplotlib.patches import Circle
 from mpl_toolkits.mplot3d import Axes3D
 import matplotlib.patheffects as path_effects
 from io import BytesIO
@@ -83,6 +84,59 @@ AIRPORT_LON = 7.2159
 AIRPORT_NAME = "Nice Airport (LFMN)"
 
 FLIGHT_LEVELS = [5, 10, 20, 50, 100, 200, 300, 400]
+
+# Airport range rings (km) for specific flight levels
+AIRPORT_RANGE_RINGS = {
+    5: 2.9,    # FL5 → 2.9 km
+    10: 5.8,   # FL10 → 5.8 km
+    20: 11.6,  # FL20 → 11.6 km
+}
+
+def draw_airport_range_ring(ax, fl, linewidth=1.5, linestyle='--', color='white', alpha=0.9):
+    """
+    Draw a range ring centered on the airport for specific flight levels.
+    Only draws for FL5, FL10, FL20 with predefined radii.
+    
+    Args:
+        ax: matplotlib axis
+        fl: flight level (int)
+        linewidth: line width for the circle
+        linestyle: line style ('--' for dashed, '-' for solid)
+        color: line color
+        alpha: transparency
+    """
+    if fl not in AIRPORT_RANGE_RINGS:
+        return None
+    
+    radius_km = AIRPORT_RANGE_RINGS[fl]
+    
+    # Convert km to degrees (approximate at this latitude)
+    # 1 degree latitude ≈ 111 km
+    # 1 degree longitude ≈ 111 * cos(lat) km
+    lat_rad = np.radians(AIRPORT_LAT)
+    km_per_deg_lat = 111.0
+    km_per_deg_lon = 111.0 * np.cos(lat_rad)
+    
+    # Create ellipse parameters (circle in km becomes ellipse in degrees)
+    width_deg = 2 * radius_km / km_per_deg_lon  # width in longitude degrees
+    height_deg = 2 * radius_km / km_per_deg_lat  # height in latitude degrees
+    
+    # Draw ellipse (appears as circle on map)
+    from matplotlib.patches import Ellipse
+    ellipse = Ellipse(
+        (AIRPORT_LON, AIRPORT_LAT), 
+        width=width_deg, 
+        height=height_deg,
+        fill=False,
+        edgecolor=color,
+        linewidth=linewidth,
+        linestyle=linestyle,
+        alpha=alpha,
+        zorder=8
+    )
+    ax.add_patch(ellipse)
+    
+    return ellipse
 
 # ============================================================================
 # CUSTOM CSS - Minimal Essential Styling
@@ -572,12 +626,12 @@ def plot_terrain_2d(lats, lons, Z, radar_lat=None, radar_lon=None, figsize=(7, 6
     
     # Radar marker - Blue
     if radar_lat is not None and radar_lon is not None:
-        ax.plot(radar_lon, radar_lat, '*', color=ACCENT_PRIMARY, markersize=16, label='Radar',
-                markeredgecolor='white', markeredgewidth=1.5)
+        ax.plot(radar_lon, radar_lat, '*', color=ACCENT_PRIMARY, markersize=10, label='Radar',
+                markeredgecolor='white', markeredgewidth=1)
     
     # Airport marker - White
-    ax.plot(AIRPORT_LON, AIRPORT_LAT, '^', color=TEXT_PRIMARY, markersize=12, label='Airport',
-            markeredgecolor='black', markeredgewidth=1)
+    ax.plot(AIRPORT_LON, AIRPORT_LAT, '^', color=TEXT_PRIMARY, markersize=8, label='Airport',
+            markeredgecolor='black', markeredgewidth=0.8)
     
     ax.legend(loc='upper right', facecolor=BG_PANEL, edgecolor=BORDER_COLOR, labelcolor=TEXT_PRIMARY, fontsize=9)
     ax.set_xlabel('Longitude (°)', color=TEXT_SECONDARY)
@@ -734,7 +788,16 @@ def plot_coverage(
 
     extent = [lons.min(), lons.max(), lats.min(), lats.max()]
 
-    if bg == "relief" and terrain is not None:
+    if bg == "terrain" and terrain is not None:
+        # Contour-filled terrain with colorbar (like 2D Elevation Map)
+        lon_grid, lat_grid = np.meshgrid(lons, lats)
+        Z_plot = np.ma.masked_where(terrain < -100, terrain)
+        im = ax.contourf(lon_grid, lat_grid, Z_plot, levels=50, cmap='terrain', zorder=1)
+        cbar = plt.colorbar(im, ax=ax, shrink=0.7, pad=0.02)
+        cbar.set_label('Elevation (m)', fontsize=8, color=TEXT_SECONDARY)
+        cbar.ax.tick_params(colors=TEXT_SECONDARY, labelsize=7)
+
+    elif bg == "relief" and terrain is not None:
         ax.imshow(
             colored_relief(terrain),
             aspect='auto', origin='lower', extent=extent,
@@ -774,11 +837,14 @@ def plot_coverage(
 
     # Markers
     if radar_lat is not None and radar_lon is not None:
-        ax.plot(radar_lon, radar_lat, '*', color=ACCENT_PRIMARY, markersize=10, label='Radar',
-                markeredgecolor='white', markeredgewidth=0.8, zorder=10)
+        ax.plot(radar_lon, radar_lat, '*', color=ACCENT_PRIMARY, markersize=7, label='Radar',
+                markeredgecolor='white', markeredgewidth=0.6, zorder=10)
 
-    ax.plot(AIRPORT_LON, AIRPORT_LAT, '^', color=TEXT_PRIMARY, markersize=8, label='Airport',
-            markeredgecolor='black', markeredgewidth=0.5, zorder=10)
+    ax.plot(AIRPORT_LON, AIRPORT_LAT, '^', color=TEXT_PRIMARY, markersize=6, label='Airport',
+            markeredgecolor='black', markeredgewidth=0.4, zorder=10)
+
+    # Draw airport range ring for FL5, FL10, FL20
+    draw_airport_range_ring(ax, fl, linewidth=1.2, color='white', alpha=0.85)
 
     ax.legend(loc='upper right', fontsize=7, facecolor=BG_PANEL, edgecolor=BORDER_COLOR, labelcolor=TEXT_PRIMARY)
 
@@ -846,11 +912,14 @@ def plot_coverage_large(
     )
 
     if radar_lat is not None and radar_lon is not None:
-        ax.plot(radar_lon, radar_lat, '*', color=ACCENT_PRIMARY, markersize=18, label='Radar',
-                markeredgecolor='white', markeredgewidth=1.5, zorder=10)
+        ax.plot(radar_lon, radar_lat, '*', color=ACCENT_PRIMARY, markersize=12, label='Radar',
+                markeredgecolor='white', markeredgewidth=1, zorder=10)
 
-    ax.plot(AIRPORT_LON, AIRPORT_LAT, '^', color=TEXT_PRIMARY, markersize=14, label='Airport',
-            markeredgecolor='black', markeredgewidth=1, zorder=10)
+    ax.plot(AIRPORT_LON, AIRPORT_LAT, '^', color=TEXT_PRIMARY, markersize=10, label='Airport',
+            markeredgecolor='black', markeredgewidth=0.8, zorder=10)
+
+    # Draw airport range ring for FL5, FL10, FL20
+    draw_airport_range_ring(ax, fl, linewidth=2.0, color='white', alpha=0.9)
 
     ax.legend(loc='upper right', fontsize=11, facecolor=BG_PANEL, edgecolor=BORDER_COLOR, labelcolor=TEXT_PRIMARY)
 
@@ -992,11 +1061,14 @@ def plot_all_coverage_grid(
         
         # Markers (always show)
         if radar_lat is not None and radar_lon is not None:
-            ax.plot(radar_lon, radar_lat, '*', color=ACCENT_PRIMARY, markersize=14,
-                    markeredgecolor='white', markeredgewidth=1.2, zorder=10)
+            ax.plot(radar_lon, radar_lat, '*', color=ACCENT_PRIMARY, markersize=9,
+                    markeredgecolor='white', markeredgewidth=0.8, zorder=10)
         
-        ax.plot(AIRPORT_LON, AIRPORT_LAT, '^', color=TEXT_PRIMARY, markersize=11,
-                markeredgecolor='black', markeredgewidth=0.8, zorder=10)
+        ax.plot(AIRPORT_LON, AIRPORT_LAT, '^', color=TEXT_PRIMARY, markersize=7,
+                markeredgecolor='black', markeredgewidth=0.6, zorder=10)
+        
+        # Draw airport range ring for FL5, FL10, FL20
+        draw_airport_range_ring(ax, fl, linewidth=1.5, color='white', alpha=0.85)
         
         # Title with FL and altitude
         alt_m = fl_to_m(fl)
@@ -1018,9 +1090,9 @@ def plot_all_coverage_grid(
     legend_elements = [
         Patch(facecolor=COVERAGE_VISIBLE, alpha=green_alpha, label='Visible'),
         plt.Line2D([0], [0], marker='*', color='w', markerfacecolor=ACCENT_PRIMARY, 
-                   markersize=14, label='Radar', markeredgecolor='white'),
+                   markersize=9, label='Radar', markeredgecolor='white'),
         plt.Line2D([0], [0], marker='^', color='w', markerfacecolor=TEXT_PRIMARY, 
-                   markersize=11, label='Airport', markeredgecolor='black'),
+                   markersize=7, label='Airport', markeredgecolor='black'),
     ]
     if show_blocked:
         legend_elements.insert(1, Patch(facecolor=BLOCKED_AREA, alpha=red_alpha, label='Blocked'))
@@ -1208,462 +1280,144 @@ def export_kmz(maps, lats, lons, radar_lat=None, radar_lon=None, show_blocked=Tr
 
 
 # ============================================================================
-# MAIN APP
+# MAIN APP - Landing Page
 # ============================================================================
 
 def main():
-    st.set_page_config(page_title="Radar Coverage Analysis", page_icon="📡", layout="wide")
+    """
+    Landing page for the Radar Coverage Analysis multi-page application.
+    
+    This serves as the home page with navigation to:
+    - Coverage Analysis (terrain visualization & LOS computation)
+    - Site Selection (coming soon - constraint-based site selection)
+    """
+    st.set_page_config(
+        page_title="Radar Coverage Analysis",
+        page_icon="📡",
+        layout="wide"
+    )
     apply_theme()
     render_title()
     
-    if 'coverage_computed' not in st.session_state:
-        st.session_state.coverage_computed = False
-    if 'expanded_fl' not in st.session_state:
-        st.session_state.expanded_fl = None
+    # Welcome section
+    st.markdown(f"""
+        <div style='background-color: {BG_CARD}; padding: 30px; border-radius: 16px; border: 1px solid {BORDER_COLOR}; margin-bottom: 2rem;'>
+            <p style='color: {TEXT_SECONDARY}; font-size: 1.1rem; line-height: 1.6; margin: 0;'>
+                Welcome to the Radar Coverage Analysis Software. This application provides comprehensive tools for 
+                analyzing radar line-of-sight coverage over terrain, with Earth curvature correction for accurate results.
+            </p>
+        </div>
+    """, unsafe_allow_html=True)
     
-    # Sidebar - Configuration Inputs Only
-    with st.sidebar:
-        st.header("Configuration")
-        
-        # Terrain Data Expander
-        with st.expander("Terrain Data", expanded=True):
-            uploaded = st.file_uploader("Upload NPZ terrain file", type=['npz'])
-            use_sample = st.checkbox("Use sample terrain", value=not uploaded)
-        
-        terrain_data = None
-        if uploaded:
-            try:
-                # Load raw terrain for visualization
-                lats, lons, Z = load_terrain_npz(uploaded)
-                # For uploaded files, apply curvature correction manually
-                # (since load_terrain_with_curvature expects a file path)
-                ref_lat_corr = 43.6584  # Nice Airport (same as geo_utils_earth_curvature)
-                ref_lon_corr = 7.2159
-                lat_ref_rad = np.radians(ref_lat_corr)
-                meters_per_deg_lat = (np.pi / 180.0) * EARTH_RADIUS_M
-                meters_per_deg_lon = (np.pi / 180.0) * EARTH_RADIUS_M * np.cos(lat_ref_rad)
-                Y_m_corr = (lats - ref_lat_corr) * meters_per_deg_lat
-                X_m_corr = (lons - ref_lon_corr) * meters_per_deg_lon
-                X_grid, Y_grid = np.meshgrid(X_m_corr, Y_m_corr)
-                dist_sq = X_grid**2 + Y_grid**2
-                curvature_drop = dist_sq / (2.0 * EARTH_RADIUS_M)
-                Z_corrected = Z - curvature_drop
-                X_m_corr, Y_m_corr, Z_corrected, lats_norm, lons_norm = normalize_all(
-                    X_m_corr, Y_m_corr, Z_corrected, lats, lons
-                )
-                terrain_data = {
-                    'lats': lats, 'lons': lons, 'Z': Z,
-                    'X_m': X_m_corr, 'Y_m': Y_m_corr, 'Z_corrected': Z_corrected,
-                    'lats_norm': lats_norm, 'lons_norm': lons_norm
-                }
-            except Exception as e:
-                st.error(f"Error loading terrain: {e}")
-        elif use_sample:
-            sample_path = Path(__file__).parent / "terrain_mat.npz"
-            if sample_path.exists():
-                # Load with curvature correction (same as main_coverage.py)
-                X_m_corr, Y_m_corr, Z_corrected, lats, lons = load_terrain_with_curvature(str(sample_path))
-                X_m_corr, Y_m_corr, Z_corrected, lats_norm, lons_norm = normalize_all(
-                    X_m_corr, Y_m_corr, Z_corrected, lats, lons
-                )
-                # Also load raw Z for visualization
-                lats_raw, lons_raw, Z_raw = load_terrain_npz(str(sample_path))
-                terrain_data = {
-                    'lats': lats_raw, 'lons': lons_raw, 'Z': Z_raw,
-                    'X_m': X_m_corr, 'Y_m': Y_m_corr, 'Z_corrected': Z_corrected,
-                    'lats_norm': lats_norm, 'lons_norm': lons_norm
-                }
-        
-        if terrain_data:
-            lats, lons, Z = terrain_data['lats'], terrain_data['lons'], terrain_data['Z']
-            
-            # Radar Position Expander
-            with st.expander("Radar Position", expanded=True):
-                radar_lat = st.number_input("Latitude", value=DEFAULT_REF_LAT, format="%.6f")
-                radar_lon = st.number_input("Longitude", value=DEFAULT_REF_LON, format="%.6f")
-                radar_h = st.number_input("Height (m AGL)", value=20.0, min_value=0.0)
-            
-            # Flight Levels Expander
-            with st.expander("Flight Levels", expanded=True):
-                # Initialize session state for FL selection if not present
-                if 'selected_fls' not in st.session_state:
-                    st.session_state.selected_fls = [10, 50, 100, 200]
-                
-                # FL multiselect (simplified, no preset buttons)
-                selected_fls = st.multiselect(
-                    "Select FLs", 
-                    FLIGHT_LEVELS, 
-                    default=st.session_state.selected_fls,
-                    key="fl_multiselect"
-                )
-                # Update session state when user manually changes selection
-                st.session_state.selected_fls = selected_fls
-            
-            # Advanced Settings Expander
-            with st.expander("Advanced", expanded=False):
-                n_samples = st.number_input("LOS Samples", value=400, min_value=50)
-                margin = st.number_input("Margin (m)", value=0.0)
-            
-            # Compute button at the bottom
-            sidebar_compute = st.button("Compute Coverage", type="primary", use_container_width=True)
-        else:
-            # No terrain data loaded - set defaults for sidebar_compute check
-            sidebar_compute = False
-            selected_fls = []
-            n_samples = 400
-            margin = 0.0
+    # Feature cards
+    st.header("Available Modules")
     
-    # =========================================================================
-    # MAIN CONTENT (outside sidebar) - LINEAR SECTION LAYOUT
-    # =========================================================================
+    col1, col2 = st.columns(2)
     
-    if terrain_data:
-        # Raw terrain for visualization
-        lats, lons, Z = terrain_data['lats'], terrain_data['lons'], terrain_data['Z']
+    with col1:
+        st.markdown(f"""
+            <div style='background-color: {BG_CARD}; padding: 25px; border-radius: 12px; border: 1px solid {BORDER_COLOR}; height: 100%;'>
+                <h3 style='color: {ACCENT_PRIMARY}; margin-top: 0;'>Coverage Analysis</h3>
+                <p style='color: {TEXT_SECONDARY}; margin-bottom: 1rem;'>
+                    Compute and visualize radar coverage across multiple flight levels with Earth curvature correction.
+                </p>
+                <ul style='color: {TEXT_SECONDARY}; margin-bottom: 1.5rem;'>
+                    <li>Load terrain data from NPZ files</li>
+                    <li>2D and 3D terrain visualization</li>
+                    <li>Coverage computation for FL5-FL400</li>
+                    <li>Export to KMZ, PNG, and CSV</li>
+                </ul>
+            </div>
+        """, unsafe_allow_html=True)
         
-        # Curvature-corrected terrain for coverage computation (same as main_coverage.py)
-        X_m = terrain_data['X_m']
-        Y_m = terrain_data['Y_m']
-        Z_corrected = terrain_data['Z_corrected']
-        lats_norm = terrain_data['lats_norm']
-        lons_norm = terrain_data['lons_norm']
-        
-        # Initialize selected_overview_fl if not set
-        if 'selected_overview_fl' not in st.session_state:
-            st.session_state.selected_overview_fl = None
-        
-        # =====================================================================
-        # SECTION 1: TERRAIN VISUALIZATION (Always visible when terrain loaded)
-        # =====================================================================
-        st.header("Terrain Visualization")
-        
-        # Terrain metrics container
-        with st.container():
-            col1, col2, col3, col4 = st.columns(4)
-            with col1:
-                st.metric("Min Elevation", f"{Z.min():.1f} m")
-            with col2:
-                st.metric("Max Elevation", f"{Z.max():.1f} m")
-            with col3:
-                st.metric("Mean Elevation", f"{Z.mean():.1f} m")
-            with col4:
-                st.metric("Grid Points", f"{Z.size:,}")
-        
-        st.markdown("<br>", unsafe_allow_html=True)
-
-        # 2D and 3D terrain visualization
-        col_2d, col_3d = st.columns(2)
-        
-        with col_2d:
-            st.subheader("2D Elevation Map")
-            fig_2d = plot_terrain_2d(lats, lons, Z, radar_lat, radar_lon, figsize=(7, 6))
-            st.pyplot(fig_2d, use_container_width=True)
-            plt.close(fig_2d)
-        
-        with col_3d:
-            st.subheader("3D Terrain Surface")
-            # Initialize angle values in session state if not set
-            if 'terrain_elev_val' not in st.session_state:
-                st.session_state.terrain_elev_val = 30
-            if 'terrain_azim_val' not in st.session_state:
-                st.session_state.terrain_azim_val = -60
-            fig_3d = plot_terrain_3d(lats, lons, Z, radar_lat, radar_lon, 
-                                     st.session_state.terrain_elev_val, 
-                                     st.session_state.terrain_azim_val, figsize=(7, 6))
-            st.pyplot(fig_3d, use_container_width=True)
-            plt.close(fig_3d)
-            # Angle controls below the 3D surface
-            c1, c2 = st.columns(2)
-            with c1:
-                st.session_state.terrain_elev_val = st.slider("Elevation", 0, 90, st.session_state.terrain_elev_val, key="terrain_elev")
-            with c2:
-                st.session_state.terrain_azim_val = st.slider("Azimuth", -180, 180, st.session_state.terrain_azim_val, key="terrain_azim")
-        
-        # Compute Coverage button at end of terrain section
-        st.markdown("<br>", unsafe_allow_html=True)
-        compute_col1, compute_col2, compute_col3 = st.columns([1, 2, 1])
-        with compute_col2:
-            main_compute = st.button(
-                "COMPUTE ALL COVERAGE", 
-                type="primary", 
-                use_container_width=True,
-                key="main_compute_btn"
-            )
-        
-        # Handle coverage computation (triggered from main button or sidebar)
-        # Uses Earth curvature-corrected algorithms (same as main_coverage.py)
-        if (main_compute or sidebar_compute) and selected_fls:
-            prog = st.progress(0)
-            stat = st.empty()
-            def upd(p):
-                prog.progress(p)
-                stat.text(f"Computing with Earth curvature correction... {p*100:.0f}%")
-            # Use curvature-corrected terrain (Z_corrected) for computation
-            maps = compute_all_fl_curvature(
-                radar_lat, radar_lon, radar_h, 
-                sorted(selected_fls), 
-                X_m, Y_m, Z_corrected,  # Using curvature-corrected terrain
-                n_samples, margin, upd
-            )
-            st.session_state.coverage_maps = maps
-            st.session_state.coverage_computed = True
-            # Store normalized lats/lons that match Z_corrected orientation
-            st.session_state.coverage_lats = lats_norm
-            st.session_state.coverage_lons = lons_norm
-            st.session_state.coverage_terrain = Z_corrected  # Store curvature-corrected terrain
-            st.session_state.radar_lat = radar_lat
-            st.session_state.radar_lon = radar_lon
-            st.session_state.radar_h = radar_h
-            # Store grid data for computing additional FLs in export
-            st.session_state.X_m = X_m
-            st.session_state.Y_m = Y_m
-            st.session_state.n_samples = n_samples
-            st.session_state.margin = margin
-            st.session_state.expanded_fl = None
-            prog.progress(1.0)
-            stat.text("Done!")
-        
-        #         # =====================================================================
-        # SECTION 2: COVERAGE ANALYSIS (After computation)
-        # =====================================================================
-        st.markdown("<br><br>", unsafe_allow_html=True)
-        st.header("Coverage Analysis")
-
-        if not st.session_state.coverage_computed or 'coverage_maps' not in st.session_state:
-            st.info("Configure settings in the sidebar and click **Compute Coverage** to see results.")
-        else:
-            maps = st.session_state.coverage_maps
-            sorted_fls = sorted(maps.keys())
-            
-            # Coverage statistics table (all FLs) - shown FIRST
-            st.subheader("Coverage Statistics")
-            data = []
-            for fl in sorted(maps.keys()):
-                cov_fl = maps[fl]
-                vis = np.sum(cov_fl)
-                tot = cov_fl.size
-                data.append({
-                    'Flight Level': f'FL{int(fl)}',
-                    'Altitude (m)': f'{fl_to_m(fl):.0f}',
-                    'Altitude (ft)': f'{int(fl)*100}',
-                    'Visible Points': f'{vis:,}',
-                    'Total Points': f'{tot:,}',
-                    'Coverage (%)': f'{100*vis/tot:.2f}%'
-                })
-            st.dataframe(data, use_container_width=True, hide_index=True)
-            
-            st.markdown("---")
-            
-            # Coverage maps display options
-            st.subheader("Coverage Maps")
-            map_opt_col1, map_opt_col2, map_opt_col3, map_opt_col4 = st.columns(4)
-            with map_opt_col1:
-                map_style = st.selectbox(
-                    "Background",
-                    ["Satellite (Esri)", "Street (Carto)"],
-                    index=0,  # default to satellite
-                    key="coverage_map_style"
-                    )
-            with map_opt_col2:
-                map_show_blocked = st.toggle("Show blocked areas", value=False, key="coverage_map_blocked")
-            with map_opt_col3:
-                map_green_alpha = st.slider("Visible opacity", 0.1, 1.0, 0.6, 0.05, key="coverage_green_alpha")
-            with map_opt_col4:
-                map_red_alpha = st.slider("Blocked opacity", 0.1, 1.0, 0.5, 0.05, key="coverage_red_alpha")
-
-            # Map UI style -> plotting params
-            if map_style == "Satellite (Esri)":
-                plot_bg = "basemap"
-                basemap_provider = "esri"
-                basemap_labels = False
-            else:  # "Street (Carto)"
-                plot_bg = "basemap"
-                basemap_provider = "carto"
-                basemap_labels = False
-
-            
-            # All coverage maps in a grid (max 2 per row)
-            # st.markdown("<h4 style='text-align: center;'>All Flight Levels</h4>", unsafe_allow_html=True)
-            n_fls = len(sorted_fls)
-            n_cols = min(2, n_fls)  # Max 2 columns
-            rows = (n_fls + n_cols - 1) // n_cols
-            for r in range(rows):
-                cols = st.columns(n_cols)
-                for c in range(n_cols):
-                    idx = r * n_cols + c
-                    if idx < n_fls:
-                        fl = sorted_fls[idx]
-                        with cols[c]:
-                            fig = plot_coverage(
-                            cov=maps[fl],
-                            lats=st.session_state.coverage_lats,
-                            lons=st.session_state.coverage_lons,
-                            fl=fl,
-                            terrain=st.session_state.coverage_terrain,     # on garde toujours le terrain dispo pour fallback
-                            radar_lat=st.session_state.radar_lat,
-                            radar_lon=st.session_state.radar_lon,
-                            bg=plot_bg,
-                            basemap_provider=basemap_provider,
-                            basemap_labels=basemap_labels,
-                            show_blocked=map_show_blocked,
-                            green_alpha=map_green_alpha,
-                            red_alpha=map_red_alpha,
-                            figsize=(5, 4)
-                        )
-
-                            st.pyplot(fig, use_container_width=True)
-                            plt.close(fig)
-        
-        st.markdown("<br><br>", unsafe_allow_html=True)
-        
-        # =====================================================================
-        # SECTION 3: EXPORT (After computation)
-        # =====================================================================
-        st.header("Export Results")
-        
-        if not st.session_state.coverage_computed or 'coverage_maps' not in st.session_state:
-            st.info("Compute coverage first to enable exports.")
-        else:
-            maps = st.session_state.coverage_maps
-            
-            # st.caption("Download coverage analysis results in various formats")
-            st.markdown("<br>", unsafe_allow_html=True)
-            
-            # Three large, clear export cards
-            col1, col2, col3 = st.columns(3)
-            
-            with col1:
-                st.subheader("KMZ Export")
-                st.caption("For Google Earth / GIS software")
-                st.markdown("""
-                - Coverage polygons by FL
-                - Radar & airport markers
-                - Color-coded visibility
-                """)
-                kmz = export_kmz(
-                    maps, 
-                    st.session_state.coverage_lats, 
-                    st.session_state.coverage_lons,
-                    st.session_state.radar_lat, 
-                    st.session_state.radar_lon, 
-                    show_blocked=True
-                )
-                st.download_button(
-                    "Download KMZ",
-                    kmz,
-                    "radar_coverage.kmz",
-                    "application/vnd.google-earth.kmz",
-                    use_container_width=True,
-                    key="kmz_download"
-                )
-                st.markdown("</div>", unsafe_allow_html=True)
-            
-            with col2:
-                st.subheader("PNG Images")
-                st.caption("High-resolution coverage maps")
-                st.markdown("""
-                - One image per FL
-                - Choose background style
-                - Optional blocked layer
-                """)
-
-                png_style = st.selectbox(
-                    "PNG background",
-                    ["Satellite (Esri)", "Street (Carto)"],
-                    index=0,
-                    key="png_bg_style",
-                )
-                png_show_blocked = st.toggle("Include blocked areas", value=False, key="png_blocked")
-                
-                # Expanders for advanced PNG options to keep the card clean
-                with st.expander("Advanced PNG Settings"):
-                    png_green_alpha = st.slider("Visible opacity", 0.1, 1.0, 0.6, 0.05, key="png_green_alpha")
-                    png_red_alpha = st.slider("Blocked opacity", 0.1, 1.0, 0.5, 0.05, key="png_red_alpha")
-                    png_dpi = st.selectbox("PNG DPI", [100, 150, 200, 300], index=1, key="png_dpi")
-                    png_fls = st.multiselect(
-                        "Flight levels to export",
-                        sorted(maps.keys()),
-                        default=sorted(maps.keys()),
-                        format_func=lambda x: f"FL{int(x)}",
-                        key="png_fls",
-                    )
-
-                if png_style == "Satellite (Esri)":
-                    png_plot_bg = "basemap"
-                    png_basemap_provider = "esri"
-                    png_basemap_labels = False
-                else:
-                    png_plot_bg = "basemap"
-                    png_basemap_provider = "carto"
-                    png_basemap_labels = False
-
-                png_zip = create_png_zip(
-                    maps, 
-                    st.session_state.coverage_lats, 
-                    st.session_state.coverage_lons,
-                    st.session_state.coverage_terrain, 
-                    st.session_state.radar_lat,
-                    st.session_state.radar_lon,
-                    st.session_state.radar_h,
-                    bg=png_plot_bg,
-                    show_blocked=png_show_blocked,
-                    green_alpha=png_green_alpha,
-                    red_alpha=png_red_alpha,
-                    basemap_provider=png_basemap_provider,
-                    basemap_labels=png_basemap_labels,
-                    fls_to_export=png_fls,
-                    dpi=png_dpi,
-                    X_m=st.session_state.X_m,
-                    Y_m=st.session_state.Y_m,
-                    n_samples=st.session_state.n_samples,
-                    margin=st.session_state.margin,
-                )
-                st.download_button(
-                    "Download PNG (ZIP)",
-                    png_zip,
-                    "coverage_maps.zip",
-                    "application/zip",
-                    use_container_width=True,
-                    key="png_download"
-                )
-                st.markdown("</div>", unsafe_allow_html=True)
-            
-            with col3:
-                st.subheader("CSV Data")
-                st.caption("Coverage statistics spreadsheet")
-                st.markdown("""
-                - Statistics per FL
-                - Altitude conversions
-                - Import to Excel/analysis
-                """)
-                csv_content = create_coverage_csv(
-                    maps, 
-                    st.session_state.radar_lat,
-                    st.session_state.radar_lon, 
-                    st.session_state.radar_h
-                )
-                st.download_button(
-                    "Download CSV",
-                    csv_content,
-                    "coverage_statistics.csv",
-                    "text/csv",
-                    use_container_width=True,
-                    key="csv_download"
-                )
-            
-            st.markdown("<br>", unsafe_allow_html=True)
-            
-            # Export summary in a centered box
-            st.markdown(f"""
-                <div style='background-color: {BG_CARD}; padding: 20px; border-radius: 12px; border: 1px solid {BORDER_COLOR}; text-align: center;'>
-                    <h4 style='margin-top: 0;'>Export Summary</h4>
-                    <p style='color: {TEXT_SECONDARY}; margin-bottom: 5px;'>Coverage computed for {len(maps)} flight levels: {', '.join([f'FL{int(fl)}' for fl in sorted(maps.keys())])}</p>
-                    <p style='color: {TEXT_SECONDARY}; margin-bottom: 0;'>Radar position: ({st.session_state.radar_lat:.6f}°N, {st.session_state.radar_lon:.6f}°E)</p>
-                </div>
-            """, unsafe_allow_html=True)
+        if st.button("Go to Coverage Analysis", type="primary", use_container_width=True, key="btn_coverage"):
+            st.switch_page("pages/1_Coverage_Analysis.py")
     
-    else:
-        st.info("Upload terrain data or enable sample terrain in the sidebar to begin.")
+    with col2:
+        st.markdown(f"""
+            <div style='background-color: {BG_CARD}; padding: 25px; border-radius: 12px; border: 1px solid {BORDER_COLOR}; height: 100%;'>
+                <h3 style='color: {ACCENT_PRIMARY}; margin-top: 0;'>Site Selection</h3>
+                <p style='color: {TEXT_SECONDARY}; margin-bottom: 1rem;'>
+                    Find optimal radar installation sites using geographic constraints and coverage scoring.
+                </p>
+                <ul style='color: {TEXT_SECONDARY}; margin-bottom: 1.5rem;'>
+                    <li>Predefined constraints (land, slope, coastline)</li>
+                    <li>User-defined constraints (GeoJSON upload)</li>
+                    <li>Interactive constraint visualization</li>
+                    <li>Candidate site ranking and export</li>
+                </ul>
+            </div>
+        """, unsafe_allow_html=True)
+        
+        if st.button("Go to Site Selection", type="primary", use_container_width=True, key="btn_site"):
+            st.switch_page("pages/2_Site_Selection.py")
+    
+    # Technical info section
+    st.markdown("<br>", unsafe_allow_html=True)
+    st.header("Technical Information")
+    
+    tech_col1, tech_col2, tech_col3 = st.columns(3)
+    
+    with tech_col1:
+        st.markdown(f"""
+            <div style='background-color: {BG_PANEL}; padding: 20px; border-radius: 10px; border: 1px solid {BORDER_COLOR};'>
+                <h4 style='color: {ACCENT_PRIMARY}; margin-top: 0;'>Earth Curvature</h4>
+                <p style='color: {TEXT_SECONDARY}; font-size: 0.9rem; margin-bottom: 0;'>
+                    All coverage computations include Earth curvature correction for accurate 
+                    line-of-sight calculations at long ranges (up to 50km radius).
+                </p>
+            </div>
+        """, unsafe_allow_html=True)
+    
+    with tech_col2:
+        st.markdown(f"""
+            <div style='background-color: {BG_PANEL}; padding: 20px; border-radius: 10px; border: 1px solid {BORDER_COLOR};'>
+                <h4 style='color: {ACCENT_PRIMARY}; margin-top: 0;'>Reference Point</h4>
+                <p style='color: {TEXT_SECONDARY}; font-size: 0.9rem; margin-bottom: 0;'>
+                    Nice Airport (LFMN) at {AIRPORT_LAT}°N, {AIRPORT_LON}°E serves as the 
+                    reference point for coordinate transformations.
+                </p>
+            </div>
+        """, unsafe_allow_html=True)
+    
+    with tech_col3:
+        numba_status = "Available" if HAS_NUMBA else "Not installed"
+        ctx_status = "Available" if HAS_CONTEXTILY else "Not installed"
+        curv_status = "Available" if HAS_CURVATURE_MODULES else "Fallback mode"
+        
+        st.markdown(f"""
+            <div style='background-color: {BG_PANEL}; padding: 20px; border-radius: 10px; border: 1px solid {BORDER_COLOR};'>
+                <h4 style='color: {ACCENT_PRIMARY}; margin-top: 0;'>Dependencies</h4>
+                <p style='color: {TEXT_SECONDARY}; font-size: 0.9rem; margin-bottom: 0;'>
+                    Numba: {numba_status}<br>
+                    Contextily: {ctx_status}<br>
+                    Curvature modules: {curv_status}
+                </p>
+            </div>
+        """, unsafe_allow_html=True)
+    
+    # Quick start guide
+    st.markdown("<br>", unsafe_allow_html=True)
+    st.header("Quick Start")
+    
+    st.markdown(f"""
+        <div style='background-color: {BG_CARD}; padding: 25px; border-radius: 12px; border: 1px solid {BORDER_COLOR};'>
+            <ol style='color: {TEXT_SECONDARY}; font-size: 1rem; line-height: 1.8; margin: 0; padding-left: 1.5rem;'>
+                <li>Navigate to <strong style='color: {TEXT_PRIMARY};'>Coverage Analysis</strong> using the sidebar or button above</li>
+                <li>Load terrain data (sample terrain available) and configure radar position</li>
+                <li>Select desired flight levels and click <strong style='color: {TEXT_PRIMARY};'>Compute Coverage</strong></li>
+                <li>View coverage maps and statistics, then export results in your preferred format</li>
+            </ol>
+        </div>
+    """, unsafe_allow_html=True)
+    
+    # Footer
+    st.markdown("<br><br>", unsafe_allow_html=True)
+    st.markdown(f"""
+        <div style='text-align: center; color: {TEXT_SECONDARY}; font-size: 0.85rem; opacity: 0.7;'>
+            Radar Coverage Analysis Software | Advanced Terrain Modeling & Line-of-Sight Computing
+        </div>
+    """, unsafe_allow_html=True)
 
 
 if __name__ == "__main__":
