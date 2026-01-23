@@ -1,225 +1,345 @@
-# Radar Coverage Analysis Software
+# Modelling Radar Thales — Coverage, Masks & Scoring (BoGE DMW)
 
-A comprehensive radar coverage analysis tool for computing and visualizing line-of-sight (LOS) coverage maps over terrain data.
+This repository contains a complete pipeline to:
 
-## Features
+1. Load DTED terrain
+2. Compute **Line-of-Sight (LOS)** radar coverage maps at required Flight Levels
+3. Build **constraint masks** (roads/buildings/protected areas/slope/etc.)
+4. Generate **authorized candidate sites**
+5. Score and rank candidates using a **Numba-accelerated exact LOS** method
+6. Export results to **KML/KMZ** (Google Earth) and NPZ (reproducibility)
 
-### Core Functionality
+> **Project context:** CentraleSupélec — Bachelor of Global Engineering (Data & Modeling Weeks) with Thales.
 
-- **Terrain Visualization**: Display terrain elevation data in 2D contour maps and interactive 3D surface plots
-- **Coverage Analysis**: Compute radar visibility for multiple Flight Levels (FL) using optimized Numba-accelerated LOS calculations
-- **Multiple Background Options**: Visualize coverage with various backgrounds:
-  - Colored terrain relief with hillshading
-  - Grayscale hillshade
-  - OpenStreetMap/CartoDB basemap tiles (Google Maps-like)
-  - Combined basemap + terrain relief
-- **KMZ Export**: Export coverage results to KMZ format for Google Earth visualization
-- **NPZ Export**: Save coverage data for further analysis
+---
 
-## Installation
+## 1) Quick Start (Recommended Path)
 
-### Prerequisites
-
-- Python 3.8 or higher
-- pip package manager
-
-### Setup
-
-1. Clone the repository:
+### 1.1 Install
 ```bash
-git clone https://gitlab-student.centralesupelec.fr/soraya.essekkat/modelling_radar_thales.git
-cd modelling_radar_thales
-```
-
-2. Install dependencies:
-```bash
+python -m venv .venv
+source .venv/bin/activate  # macOS/Linux
+# .venv\Scripts\activate   # Windows (PowerShell)
 pip install -r requirements.txt
 ```
 
-### Dependencies
+### 1.2 Verify terrain loading
+```bash
+python visualize_terrain.py
+```
 
-- **numpy**: Array operations and terrain data handling
-- **matplotlib**: Visualization and plotting
-- **streamlit**: Web application framework
-- **numba**: JIT compilation for performance (highly recommended)
-- **contextily**: Basemap tiles (optional, for Google Maps-like backgrounds)
+### 1.3 Compute coverage (single radar position)
 
-## Usage
+**Reference version (slower, clear):**
+```bash
+python main_coverage.py
+```
 
-### Web Application (Streamlit)
+**Numba ENU exact LOS (recommended for full-grid performance):**
+```bash
+python FLs_numba_enu.py
+```
 
-Launch the interactive web interface:
+**One FL full-map (Numba):**
+```bash
+python fl_fullmap_numba.py
+```
 
+### 1.4 Full pipeline: masks → candidates → scoring → export
+
+1. Generate authorized candidates from constraints:
+```bash
+python generate_candidates_full_constraints.py
+
+# or relaxed versions:
+python generate_candidates_relaxed.py
+python generate_candidates_no_residential.py
+```
+
+2. Score candidates (Numba exact LOS in ENU):
+```bash
+python run_scoring_numba_enu.py
+```
+
+3. Export top-scored sites to Google Earth:
+```bash
+python export_scored_points_weighted_kml.py
+```
+
+---
+
+## 2) Terrain Data Format (NPZ)
+
+The terrain file must contain:
+
+- `lat`: 1D array of latitudes (degrees, WGS84)
+- `lon`: 1D array of longitudes (degrees, WGS84)
+- `ter`: 2D terrain elevation array in meters above sea level (MSL), shape `(len(lat), len(lon))`
+
+**Example:**
+```python
+import numpy as np
+
+lats = np.linspace(43.3, 44.0, 500)
+lons = np.linspace(6.7, 7.9, 600)
+Z = np.random.rand(500, 600) * 1000
+
+np.savez("terrain_mat.npz", lat=lats, lon=lons, ter=Z)
+```
+
+---
+
+## 3) Coordinate System: ENU + Earth Curvature Correction
+
+To keep all physical computations consistent (distance, slope, LOS sampling), this project centralizes coordinate conversion using:
+
+- `geo_utils.py` / `geo_utils_earth_curvature.py`
+
+It converts (lat, lon) into a local tangent plane (ENU):
+
+- **X (East)** meters from reference point
+- **Y (North)** meters from reference point
+
+and applies a Z correction for Earth curvature:
+
+$$Z_{\text{ENU}} = Z_{\text{terrain}} - \frac{d^2}{2R}$$
+
+This is important for 50km-scale geometry.
+
+---
+
+## 4) LOS Algorithm (Exact)
+
+A target point is **visible** if along the segment radar → target:
+
+- At every sampled point, the terrain altitude is strictly below the LOS altitude.
+
+**Core logic:**
+
+- Interpolate terrain at sampled points (bilinear interpolation)
+- Compute LOS line altitude
+- Early exit as soon as blocked
+
+### Implementations
+
+- **Reference (Python)**: `LOS.py`
+- **Vectorized prototype**: `LOS_np.py`
+- **Fast exact ENU + Numba**: `LOS_numba_enu.py` ✅ (recommended)
+
+---
+
+## 5) Flight Levels (Tender Requirement)
+
+**Supported Flight Levels:**
+
+- FL5, FL10, FL20, FL50, FL100, FL200, FL300, FL400
+
+**Conversion:**
+
+$$\text{alt}_m = \text{FL} \times 100 \times 0.3048$$
+
+---
+
+## 6) Coverage Computation Modules
+
+### 6.1 Reference version (clear but slow)
+
+- `coverage_analysis.py`
+- `main_coverage.py`
+
+### 6.2 Accelerated versions
+
+- `coverage_analysis_fast.py` (approx / batching style)
+- **Numba ENU full-grid**:
+  - `LOS_numba_enu.py`
+  - `FLs_numba_enu.py`
+  - `score_numba_enu.py`
+  - `run_scoring_numba_enu.py`
+
+---
+
+## 7) Masks & Constraints (Site Selection)
+
+Constraint masks are boolean grids where:
+
+- `True` = site allowed
+- `False` = site forbidden
+
+**Typical masks:**
+
+- **Road proximity**: keep sites close to roads / accessible
+- **Buildings buffer**: forbid installation around buildings
+- **Residential / protected areas**: exclude protected zones
+- **Electrical stations**: optional keep-away constraint
+- **Slope**: forbid terrain that exceeds a max slope threshold
+- **Airport visibility**: ensure LOS constraints to airport if required
+
+**Mask modules** (names may vary depending on the branch/version):
+
+- `site_location_masks.py` (base/orchestration)
+- `buildings_masks.py` / `buildings.py`
+- `roads_masks.py`
+- `protected_areas_masks.py`
+- `electrical_stations_masks.py`
+- `mask_slope.py`
+
+**Candidate generation scripts:**
+
+- `generate_candidates_full_constraints.py`
+- `generate_candidates_relaxed.py`
+- `generate_candidates_no_residential.py`
+
+**Outputs** typically saved as NPZ:
+
+- `authorized_points_all_masks.npz` containing arrays `lat`, `lon`
+
+---
+
+## 8) Scoring & Ranking Candidates (Numba ENU)
+
+The scoring stage:
+
+1. Loads terrain once
+2. For each candidate site, computes coverage % at each FL
+3. Aggregates with weights, and sorts candidates by score
+
+**Main scripts:**
+
+- `score_numba_enu.py`
+- `run_scoring_numba_enu.py`
+
+**Typical output:**
+
+- `scored_candidates_fullgrid.npz` with:
+  - `lat`, `lon`
+  - `score`
+  - `cov_by_fl`
+
+---
+
+## 9) Visualization
+
+**Coverage plotting:**
+
+- `visualize_coverage.py`
+- `plot_coverage_map(...)`
+- `plot_all_coverage_maps(...)`
+
+**Terrain plotting:**
+
+- `visualize_terrain.py`
+
+**Optional basemap tiles:**
+
+- `contextily` (if enabled)
+
+---
+
+## 10) Google Earth Export (KML/KMZ)
+
+Exports are handled by:
+
+- `export_kml.py`
+- `export_scored_points_weighted_kml.py`
+- Related `export_*_kml.py` utilities
+
+---
+
+## 11) Streamlit App (Interactive)
+
+**Launch:**
 ```bash
 streamlit run radar_coverage_app.py
 ```
 
-The application provides:
-1. **Terrain View Tab**: 2D and 3D terrain visualization
-2. **Coverage Analysis Tab**: Configure and compute coverage for selected Flight Levels
-3. **Results Tab**: View coverage maps with different backgrounds
-4. **Export Tab**: Download KMZ files for Google Earth
+The app allows:
 
-### Command Line Interface
+- Terrain inspection
+- Running coverage
+- Viewing results with different backgrounds
+- Exporting outputs
 
-For batch processing or automated workflows:
+---
 
-```bash
-# Basic usage with default settings
-python radar_coverage_cli.py terrain_mat.npz
-
-# Specify flight levels and export to KMZ
-python radar_coverage_cli.py terrain.npz --fl 10,50,100,200 --export-kmz
-
-# Visualize terrain only (no coverage computation)
-python radar_coverage_cli.py terrain.npz --visualize --no-coverage --show-3d
-
-# Custom radar position
-python radar_coverage_cli.py terrain.npz --radar-lat 43.70 --radar-lon 7.25 --radar-height 30
-
-# Save all figures to output directory
-python radar_coverage_cli.py terrain.npz --output ./results --save-figures --export-kmz --export-npz
-
-# Full options
-python radar_coverage_cli.py terrain.npz \
-    --fl 5,10,20,50,100,200 \
-    --radar-lat 43.6584 \
-    --radar-lon 7.2159 \
-    --radar-height 20 \
-    --n-samples 400 \
-    --background relief \
-    --output ./output \
-    --save-figures \
-    --export-kmz \
-    --export-npz \
-    --visualize
-```
-
-### CLI Options
-
-| Option | Description | Default |
-|--------|-------------|---------|
-| `--radar-lat` | Radar latitude (degrees) | 43.6584 |
-| `--radar-lon` | Radar longitude (degrees) | 7.2159 |
-| `--radar-height` | Radar height AGL (meters) | 20.0 |
-| `--fl` | Flight levels (comma-separated) | 10,50,100,200 |
-| `--n-samples` | LOS ray samples | 400 |
-| `--margin` | Safety margin (meters) | 0.0 |
-| `--background` | Map background type | relief |
-| `--output` | Output directory | . |
-| `--export-kmz` | Export to KMZ | False |
-| `--export-npz` | Export coverage data | False |
-| `--save-figures` | Save PNG figures | False |
-| `--visualize` | Show interactive plots | False |
-| `--show-3d` | Include 3D terrain view | False |
-
-## Terrain Data Format
-
-The terrain NPZ file must contain:
-
-- `lat`: 1D array of latitude values (degrees, WGS84)
-- `lon`: 1D array of longitude values (degrees, WGS84)
-- `ter`: 2D array of terrain elevation (meters MSL), shape (len(lat), len(lon))
-
-Example:
-```python
-import numpy as np
-
-# Create sample terrain data
-lats = np.linspace(43.0, 44.0, 500)
-lons = np.linspace(6.5, 8.0, 600)
-terrain = np.random.rand(500, 600) * 1000  # Elevation in meters
-
-np.savez('my_terrain.npz', lat=lats, lon=lons, ter=terrain)
-```
-
-## Flight Levels
-
-The software supports 8 standard Flight Levels:
-- FL5 = 500 ft = ~152 m
-- FL10 = 1,000 ft = ~305 m
-- FL20 = 2,000 ft = ~610 m
-- FL50 = 5,000 ft = ~1,524 m
-- FL100 = 10,000 ft = ~3,048 m
-- FL200 = 20,000 ft = ~6,096 m
-- FL300 = 30,000 ft = ~9,144 m
-- FL400 = 40,000 ft = ~12,192 m
-
-Conversion: `altitude_meters = FL * 100 * 0.3048`
-
-## Project Structure
-
-```
+## 12) Project Structure
+```text
 modelling_radar_thales/
-├── radar_coverage_app.py     # Main Streamlit web application
-├── radar_coverage_cli.py     # Command-line interface
-├── requirements.txt          # Python dependencies
-├── README.md                 # This file
-│
-├── # Core modules (used by the application):
-├── visualize_terrain.py      # Terrain visualization utilities
-├── LOS_numba_enu.py          # Numba-optimized LOS calculations
-├── coverage_analysis.py      # Coverage computation module
-├── visualize_coverage.py     # Coverage visualization utilities
-├── export_kml.py             # KML/KMZ export functionality
-├── geo_utils.py              # Geographic coordinate utilities
-│
-├── # Sample data:
-├── terrain_mat.npz           # Sample terrain data (Nice area)
-├── terrain_req01_50km.npz    # Extended terrain data
-│
-└── geographical_data/        # GeoJSON reference data
+├── radar_coverage_app.py
+├── radar_coverage_cli.py
+├── main_coverage.py
+├── coverage_analysis.py
+├── coverage_analysis_fast.py
+├── LOS.py
+├── LOS_np.py
+├── LOS_numba_enu.py
+├── FLs_numba_enu.py
+├── score_numba_enu.py
+├── run_scoring_numba_enu.py
+├── geo_utils.py
+├── geo_utils_earth_curvature.py
+├── visualize_terrain.py
+├── visualize_coverage.py
+├── export_kml.py
+├── export_*_kml.py
+├── mask_*.py
+├── generate_candidates_*.py
+├── requirements.txt
+├── terrain_mat.npz
+└── geographical_data/
     ├── buildings.geojson
     ├── roads_nice_50km.geojson
-    └── protected_areas.geojson
+    ├── protected_areas.geojson
+    └── export.geojson
 ```
 
-## Algorithm
+---
 
-The coverage analysis uses a Line-of-Sight (LOS) algorithm:
+## 13) Troubleshooting
 
-1. **Terrain Loading**: Load elevation data and convert to ENU (East-North-Up) coordinates
-2. **Grid Normalization**: Ensure grid axes are properly ordered for interpolation
-3. **LOS Ray Tracing**: For each grid point at a given Flight Level:
-   - Cast a ray from radar to target point
-   - Sample terrain elevation along the ray
-   - Check if ray clears terrain at all sample points
-4. **Coverage Map**: Generate boolean map indicating visible (True) or blocked (False)
+### First run is slow
 
-The algorithm is optimized using Numba JIT compilation with parallel processing for significant performance improvements.
+Numba compiles on the first execution. Run once, then rerun → much faster.
 
-## Output Formats
+### Coverage changes when changing grid size
 
-### KMZ (Google Earth)
-- Polygons colored by visibility status (green=visible, red=blocked)
-- Radar position marker
-- Organized by Flight Level folders
+Changing resolution changes the evaluated target points. For fair comparisons:
 
-### PNG (Figures)
-- High-resolution coverage maps with terrain backgrounds
-- Coverage statistics overlay
-- Radar position marker
+- Keep the same grid/subset
+- Same radar height
+- Same `n_samples`
+- Same coordinate reference (ENU) and terrain normalization
 
-### NPZ (Data)
-- Full coverage arrays for each Flight Level
-- Terrain and coordinate data
-- Radar parameters
+### Lat/Lon decreasing issues
 
-## Performance
+Some datasets store axes descending. Use normalization utilities to avoid `searchsorted` and plotting inconsistencies.
 
-With Numba acceleration enabled:
-- ~500x500 grid: ~2-5 seconds per Flight Level
-- ~1000x1000 grid: ~10-20 seconds per Flight Level
+---
 
-Without Numba (pure Python):
-- Significantly slower (10-100x)
-- Recommended only for small grids
+## 14) Contributing / Git Workflow
+
+### Add README to your Git repo
+
+1. Create or replace the README file:
+```bash
+touch README.md
+# paste this content into README.md
+```
+
+2. Commit and push:
+```bash
+git add README.md
+git commit -m "Add project README"
+git push origin main
+```
+
+If you are working on a branch:
+```bash
+git push origin <branch-name>
+# then open a Merge Request / Pull Request to main
+```
+
+---
 
 ## License
 
-This project is developed for educational purposes at CentraleSupelec.
-
-## Authors
-
-- Radar Analysis Team
-- CentraleSupelec / Thales collaboration
+Educational use (CentraleSupélec / Thales project).
