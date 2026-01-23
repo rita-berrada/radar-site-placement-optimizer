@@ -44,16 +44,16 @@ from radar_coverage_app import (
 
 # Import mask modules
 try:
-    from site_location_masks import (
+    from mask_site_location import (
         mask_land, mask_50km, mask_french_territory, 
         mask_coastline_buffer, combine_masks
     )
     from mask_slope import mask_slope
-    from roads_masks import mask_roads_from_geojson, load_roads_and_convert_to_enu, mask_roads_proximity_fast
-    from buildings_masks import mask_buildings_from_geojson, load_buildings_and_convert_to_enu, mask_buildings_exclusion_fast
+    from mask_roads import mask_roads_from_geojson, load_roads_and_convert_to_enu, mask_roads_proximity_fast
+    from mask_buildings import mask_buildings_from_geojson, load_buildings_and_convert_to_enu, mask_buildings_exclusion_fast
     from mask_residential import mask_residential_from_geojson
-    from protected_areas_mask import mask_protected_areas_from_geojson
-    from electrical_stations_masks import load_stations_and_convert_to_enu, mask_electrical_proximity_fast
+    from mask_protected_areas import mask_protected_areas_from_geojson
+    from mask_electric_stations import load_stations_and_convert_to_enu, mask_electrical_proximity_fast
     from geo_utils_earth_curvature import load_and_convert_to_enu, REF_LAT, REF_LON, EARTH_RADIUS_M as GEO_EARTH_RADIUS_M
     HAS_MASK_MODULES = True
 except ImportError as e:

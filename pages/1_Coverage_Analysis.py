@@ -295,8 +295,8 @@ def main():
             with map_opt_col1:
                 map_style = st.selectbox(
                     "Background",
-                    ["Elevation", "Satellite (Esri)", "Street (Carto)"],
-                    index=0,  # default to elevation
+                    ["Relief", "Elevation", "Satellite (Esri)", "Street (Carto)"],
+                    index=0,  # default to relief
                     key="coverage_map_style"
                 )
             with map_opt_col2:
@@ -307,7 +307,11 @@ def main():
                 map_red_alpha = st.slider("Blocked opacity", 0.1, 1.0, 0.5, 0.05, key="coverage_red_alpha")
 
             # Map UI style -> plotting params
-            if map_style == "Elevation":
+            if map_style == "Relief":
+                plot_bg = "relief"
+                basemap_provider = None
+                basemap_labels = False
+            elif map_style == "Elevation":
                 plot_bg = "terrain"
                 basemap_provider = None
                 basemap_labels = False
@@ -422,8 +426,8 @@ def main():
 
                 png_style = st.selectbox(
                     "PNG background",
-                    ["Elevation", "Satellite (Esri)", "Street (Carto)"],
-                    index=0,
+                    ["Relief", "Elevation", "Satellite (Esri)", "Street (Carto)"],
+                    index=0,  # default to relief
                     key="png_bg_style",
                 )
                 png_show_blocked = st.toggle("Include blocked areas", value=False, key="png_blocked")
@@ -441,7 +445,11 @@ def main():
                         key="png_fls",
                     )
 
-                if png_style == "Elevation":
+                if png_style == "Relief":
+                    png_plot_bg = "relief"
+                    png_basemap_provider = None
+                    png_basemap_labels = False
+                elif png_style == "Elevation":
                     png_plot_bg = "terrain"
                     png_basemap_provider = None
                     png_basemap_labels = False
