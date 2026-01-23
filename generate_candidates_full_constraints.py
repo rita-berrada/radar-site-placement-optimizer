@@ -16,13 +16,13 @@ import os
 from geo_utils_earth_curvature import load_and_convert_to_enu, REF_LAT, REF_LON
 
 # --- 2. The Updated Masks (Metric System Compatible) ---
-from site_location_masks import mask_land, mask_50km, mask_french_territory, combine_masks, mask_coastline_buffer
+from mask_site_location import mask_land, mask_50km, mask_french_territory, combine_masks, mask_coastline_buffer
 from mask_slope import mask_slope
-from electrical_stations_masks import mask_electrical_from_json
-from roads_masks import mask_roads_from_geojson  
-from buildings_masks import mask_buildings_from_geojson
+from mask_electric_stations import mask_electrical_from_json
+from mask_roads import mask_roads_from_geojson  
+from mask_buildings import mask_buildings_from_geojson
 from mask_residential import mask_residential_from_geojson 
-from protected_areas_mask import mask_protected_areas_from_geojson
+from mask_protected_areas import mask_protected_areas_from_geojson
 
 # --- 3. The Physics Module (Line of Sight) ---
 from mask_see_airport import check_visibility_batch
