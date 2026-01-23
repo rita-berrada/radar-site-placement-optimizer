@@ -90,12 +90,13 @@ AIRPORT_RANGE_RINGS = {
     5: 2.9,    # FL5 → 2.9 km
     10: 5.8,   # FL10 → 5.8 km
     20: 11.6,  # FL20 → 11.6 km
+    50: 29.0,  # FL50 → 29 km
 }
 
 def draw_airport_range_ring(ax, fl, linewidth=1.5, linestyle='--', color='white', alpha=0.9):
     """
     Draw a range ring centered on the airport for specific flight levels.
-    Only draws for FL5, FL10, FL20 with predefined radii.
+    Only draws for FL5, FL10, FL20, FL50 with predefined radii.
     
     Args:
         ax: matplotlib axis
@@ -117,26 +118,19 @@ def draw_airport_range_ring(ax, fl, linewidth=1.5, linestyle='--', color='white'
     km_per_deg_lat = 111.0
     km_per_deg_lon = 111.0 * np.cos(lat_rad)
     
-    # Create ellipse parameters (circle in km becomes ellipse in degrees)
-    width_deg = 2 * radius_km / km_per_deg_lon  # width in longitude degrees
-    height_deg = 2 * radius_km / km_per_deg_lat  # height in latitude degrees
+    # Radius in degrees
+    radius_lat = radius_km / km_per_deg_lat
+    radius_lon = radius_km / km_per_deg_lon
     
-    # Draw ellipse (appears as circle on map)
-    from matplotlib.patches import Ellipse
-    ellipse = Ellipse(
-        (AIRPORT_LON, AIRPORT_LAT), 
-        width=width_deg, 
-        height=height_deg,
-        fill=False,
-        edgecolor=color,
-        linewidth=linewidth,
-        linestyle=linestyle,
-        alpha=alpha,
-        zorder=8
-    )
-    ax.add_patch(ellipse)
+    # Draw circle using parametric plot (cleaner than Ellipse patch)
+    theta = np.linspace(0, 2 * np.pi, 100)
+    circle_lon = AIRPORT_LON + radius_lon * np.cos(theta)
+    circle_lat = AIRPORT_LAT + radius_lat * np.sin(theta)
     
-    return ellipse
+    line, = ax.plot(circle_lon, circle_lat, linestyle=linestyle, linewidth=linewidth, 
+                    color=color, alpha=alpha, zorder=8)
+    
+    return line
 
 # ============================================================================
 # CUSTOM CSS - Minimal Essential Styling
@@ -788,11 +782,12 @@ def plot_coverage(
 
     extent = [lons.min(), lons.max(), lats.min(), lats.max()]
 
+    # Get terrain image based on background type
     if bg == "terrain" and terrain is not None:
-        # Contour-filled terrain with colorbar (like 2D Elevation Map)
-        lon_grid, lat_grid = np.meshgrid(lons, lats)
+        # Terrain colormap using imshow (no contour artifacts)
         Z_plot = np.ma.masked_where(terrain < -100, terrain)
-        im = ax.contourf(lon_grid, lat_grid, Z_plot, levels=50, cmap='terrain', zorder=1)
+        im = ax.imshow(Z_plot, extent=extent, aspect='auto', origin='lower', 
+                       cmap='terrain', interpolation='bilinear', zorder=1)
         cbar = plt.colorbar(im, ax=ax, shrink=0.7, pad=0.02)
         cbar.set_label('Elevation (m)', fontsize=8, color=TEXT_SECONDARY)
         cbar.ax.tick_params(colors=TEXT_SECONDARY, labelsize=7)
@@ -812,26 +807,36 @@ def plot_coverage(
             if terrain is not None:
                 ax.imshow(colored_relief(terrain), aspect='auto', origin='lower', extent=extent, interpolation='bilinear')
 
-    # Coverage overlay
+    # Coverage overlay - use RGBA array to avoid transparency artifacts
+    # Create RGBA overlay directly
+    overlay = np.zeros((*cov.shape, 4), dtype=np.float32)
+    
+    # Get colors
+    green_rgb = [int(COVERAGE_VISIBLE[i:i+2], 16)/255 for i in (1, 3, 5)]
+    red_rgb = [int(BLOCKED_AREA[i:i+2], 16)/255 for i in (1, 3, 5)]
+    
+    # Set visible areas (cov=1) to green
+    visible_mask = cov == 1
+    overlay[visible_mask, 0] = green_rgb[0]
+    overlay[visible_mask, 1] = green_rgb[1]
+    overlay[visible_mask, 2] = green_rgb[2]
+    overlay[visible_mask, 3] = green_alpha
+    
+    # Set blocked areas (cov=0) 
     if show_blocked:
-        colors = [
-            (*[int(BLOCKED_AREA[i:i+2], 16)/255 for i in (1, 3, 5)], red_alpha),
-            (*[int(COVERAGE_VISIBLE[i:i+2], 16)/255 for i in (1, 3, 5)], green_alpha),
-        ]
-    else:
-        colors = [
-            (0, 0, 0, 0),
-            (*[int(COVERAGE_VISIBLE[i:i+2], 16)/255 for i in (1, 3, 5)], green_alpha),
-        ]
+        blocked_mask = cov == 0
+        overlay[blocked_mask, 0] = red_rgb[0]
+        overlay[blocked_mask, 1] = red_rgb[1]
+        overlay[blocked_mask, 2] = red_rgb[2]
+        overlay[blocked_mask, 3] = red_alpha
+    # else: blocked areas stay transparent (alpha=0)
 
     ax.imshow(
-        cov.astype(float),
-        cmap=ListedColormap(colors),
+        overlay,
         aspect='auto',
         origin='lower',
         extent=extent,
-        interpolation='nearest',
-        vmin=0, vmax=1,
+        interpolation='none',  # No interpolation to avoid artifacts
         zorder=2
     )
 
@@ -843,8 +848,19 @@ def plot_coverage(
     ax.plot(AIRPORT_LON, AIRPORT_LAT, '^', color=TEXT_PRIMARY, markersize=6, label='Airport',
             markeredgecolor='black', markeredgewidth=0.4, zorder=10)
 
-    # Draw airport range ring for FL5, FL10, FL20
-    draw_airport_range_ring(ax, fl, linewidth=1.2, color='white', alpha=0.85)
+    # Draw airport range ring for FL5, FL10, FL20, FL50
+    if fl in AIRPORT_RANGE_RINGS:
+        radius_km = AIRPORT_RANGE_RINGS[fl]
+        lat_rad = np.radians(AIRPORT_LAT)
+        km_per_deg_lat = 111.0
+        km_per_deg_lon = 111.0 * np.cos(lat_rad)
+        radius_lat = radius_km / km_per_deg_lat
+        radius_lon = radius_km / km_per_deg_lon
+        theta = np.linspace(0, 2 * np.pi, 100)
+        circle_lon = AIRPORT_LON + radius_lon * np.cos(theta)
+        circle_lat = AIRPORT_LAT + radius_lat * np.sin(theta)
+        ax.plot(circle_lon, circle_lat, 'w--', linewidth=1.0, alpha=1.0, zorder=15,
+                label=f'{radius_km:.1f}km radius')
 
     ax.legend(loc='upper right', fontsize=7, facecolor=BG_PANEL, edgecolor=BORDER_COLOR, labelcolor=TEXT_PRIMARY)
 
@@ -871,16 +887,36 @@ def plot_coverage_large(
     bg="relief",
     basemap_provider="carto",   # <-- NEW
     basemap_labels=False,       # <-- NEW
-    show_blocked=True, green_alpha=0.5, red_alpha=0.3, figsize=(11, 9)
+    show_blocked=True, green_alpha=0.5, red_alpha=0.3, figsize=(11, 9),
+    for_export=False  # If True, use white background with dark text
 ):
     """Large coverage map for expanded view."""
+    # Color scheme based on context
+    if for_export:
+        bg_color = 'white'
+        text_color = '#1a1a1a'
+        text_secondary_color = '#333333'
+        border_color = '#cccccc'
+        legend_bg = 'white'
+    else:
+        bg_color = BG_PANEL
+        text_color = TEXT_PRIMARY
+        text_secondary_color = TEXT_SECONDARY
+        border_color = BORDER_COLOR
+        legend_bg = BG_PANEL
+    
     fig, ax = plt.subplots(figsize=figsize)
-    fig.patch.set_facecolor(BG_PANEL)
-    ax.set_facecolor(BG_PANEL)
+    fig.patch.set_facecolor(bg_color)
+    ax.set_facecolor(bg_color)
 
     extent = [lons.min(), lons.max(), lats.min(), lats.max()]
 
-    if bg == "relief" and terrain is not None:
+    if bg == "terrain" and terrain is not None:
+        # Terrain colormap using imshow
+        Z_plot = np.ma.masked_where(terrain < -100, terrain)
+        ax.imshow(Z_plot, extent=extent, aspect='auto', origin='lower',
+                  cmap='terrain', interpolation='bilinear', zorder=1)
+    elif bg == "relief" and terrain is not None:
         ax.imshow(colored_relief(terrain), aspect='auto', origin='lower', extent=extent, interpolation='bilinear')
     elif bg == "basemap":
         try:
@@ -918,16 +954,27 @@ def plot_coverage_large(
     ax.plot(AIRPORT_LON, AIRPORT_LAT, '^', color=TEXT_PRIMARY, markersize=10, label='Airport',
             markeredgecolor='black', markeredgewidth=0.8, zorder=10)
 
-    # Draw airport range ring for FL5, FL10, FL20
-    draw_airport_range_ring(ax, fl, linewidth=2.0, color='white', alpha=0.9)
+    # Draw airport range ring for FL5, FL10, FL20, FL50
+    if fl in AIRPORT_RANGE_RINGS:
+        radius_km = AIRPORT_RANGE_RINGS[fl]
+        lat_rad = np.radians(AIRPORT_LAT)
+        km_per_deg_lat = 111.0
+        km_per_deg_lon = 111.0 * np.cos(lat_rad)
+        radius_lat = radius_km / km_per_deg_lat
+        radius_lon = radius_km / km_per_deg_lon
+        theta = np.linspace(0, 2 * np.pi, 100)
+        circle_lon = AIRPORT_LON + radius_lon * np.cos(theta)
+        circle_lat = AIRPORT_LAT + radius_lat * np.sin(theta)
+        ax.plot(circle_lon, circle_lat, 'w--', linewidth=1.5, alpha=1.0, zorder=15,
+                label=f'{radius_km:.1f}km radius')
 
-    ax.legend(loc='upper right', fontsize=11, facecolor=BG_PANEL, edgecolor=BORDER_COLOR, labelcolor=TEXT_PRIMARY)
+    ax.legend(loc='upper right', fontsize=11, facecolor=legend_bg, edgecolor=border_color, labelcolor=text_color)
 
     pct = np.sum(cov) / cov.size * 100
     ax.text(
         0.02, 0.98, f'{pct:.1f}% visible', transform=ax.transAxes, fontsize=12, va='top',
-        color=TEXT_PRIMARY, fontweight='600',
-        bbox=dict(boxstyle='round,pad=0.5', facecolor=BG_PANEL, alpha=0.95, edgecolor=BORDER_COLOR)
+        color=text_color, fontweight='600',
+        bbox=dict(boxstyle='round,pad=0.5', facecolor=legend_bg, alpha=0.95, edgecolor=border_color)
     )
 
     cbar = plt.colorbar(im, ax=ax, pad=0.02, shrink=0.8)
@@ -937,13 +984,13 @@ def plot_coverage_large(
     else:
         cbar.set_ticks([0.75])
         cbar.set_ticklabels(['Visible'])
-    cbar.ax.tick_params(colors=TEXT_SECONDARY)
+    cbar.ax.tick_params(colors=text_secondary_color)
 
-    ax.set_xlabel('Longitude (°)', fontsize=11, color=TEXT_SECONDARY)
-    ax.set_ylabel('Latitude (°)', fontsize=11, color=TEXT_SECONDARY)
-    ax.tick_params(colors=TEXT_SECONDARY, labelsize=9)
+    ax.set_xlabel('Longitude (°)', fontsize=11, color=text_secondary_color)
+    ax.set_ylabel('Latitude (°)', fontsize=11, color=text_secondary_color)
+    ax.tick_params(colors=text_secondary_color, labelsize=9)
     for spine in ax.spines.values():
-        spine.set_color(BORDER_COLOR)
+        spine.set_color(border_color)
 
     ax.set_title(f'Radar Coverage - FL{int(fl)}', fontsize=14, fontweight='600', color=ACCENT_PRIMARY)
     plt.tight_layout()
@@ -965,12 +1012,27 @@ def plot_all_coverage_grid(
     green_alpha=0.5,
     red_alpha=0.3,
     figsize=(24, 12),
+    for_export=False  # If True, use white background with dark text
 ):
     """
     Create a single figure with all 8 flight levels in a 4x2 grid.
     Always shows all 8 standard FLs: 5, 10, 20, 50, 100, 200, 300, 400.
     Layout: 4 columns x 2 rows.
     """
+    # Color scheme based on context
+    if for_export:
+        bg_color = 'white'
+        text_color = '#1a1a1a'
+        text_secondary_color = '#333333'
+        border_color = '#cccccc'
+        legend_bg = 'white'
+    else:
+        bg_color = BG_PANEL
+        text_color = TEXT_PRIMARY
+        text_secondary_color = TEXT_SECONDARY
+        border_color = BORDER_COLOR
+        legend_bg = BG_PANEL
+    
     # Always use all 8 standard FLs
     all_fls = [5, 10, 20, 50, 100, 200, 300, 400]
     
@@ -978,7 +1040,7 @@ def plot_all_coverage_grid(
     n_rows, n_cols = 2, 4
     
     fig, axes = plt.subplots(n_rows, n_cols, figsize=figsize)
-    fig.patch.set_facecolor(BG_PANEL)
+    fig.patch.set_facecolor(bg_color)
     
     axes_flat = axes.flatten()
     
@@ -999,14 +1061,18 @@ def plot_all_coverage_grid(
     
     for idx, fl in enumerate(all_fls):
         ax = axes_flat[idx]
-        ax.set_facecolor(BG_PANEL)
+        ax.set_facecolor(bg_color)
         
         # Check if we have coverage data for this FL
         if fl in maps:
             cov = maps[fl]
             
             # Background
-            if bg == "relief" and terrain is not None:
+            if bg == "terrain" and terrain is not None:
+                Z_plot = np.ma.masked_where(terrain < -100, terrain)
+                ax.imshow(Z_plot, extent=extent, aspect='auto', origin='lower',
+                          cmap='terrain', interpolation='bilinear', zorder=1)
+            elif bg == "relief" and terrain is not None:
                 ax.imshow(
                     colored_relief(terrain),
                     aspect='auto', origin='lower', extent=extent,
@@ -1035,12 +1101,16 @@ def plot_all_coverage_grid(
             pct = np.sum(cov) / cov.size * 100
             ax.text(
                 0.02, 0.98, f'{pct:.1f}%', transform=ax.transAxes, fontsize=12, va='top',
-                color=TEXT_PRIMARY, fontweight='700',
-                bbox=dict(boxstyle='round,pad=0.3', facecolor=BG_PANEL, alpha=0.9, edgecolor=BORDER_COLOR)
+                color=text_color, fontweight='700',
+                bbox=dict(boxstyle='round,pad=0.3', facecolor=legend_bg, alpha=0.9, edgecolor=border_color)
             )
         else:
             # No data for this FL - show terrain only with "Not computed" label
-            if bg == "relief" and terrain is not None:
+            if bg == "terrain" and terrain is not None:
+                Z_plot = np.ma.masked_where(terrain < -100, terrain)
+                ax.imshow(Z_plot, extent=extent, aspect='auto', origin='lower',
+                          cmap='terrain', interpolation='bilinear', zorder=1)
+            elif bg == "relief" and terrain is not None:
                 ax.imshow(
                     colored_relief(terrain),
                     aspect='auto', origin='lower', extent=extent,
@@ -1055,8 +1125,8 @@ def plot_all_coverage_grid(
             
             ax.text(
                 0.5, 0.5, 'Not computed', transform=ax.transAxes, fontsize=14, 
-                ha='center', va='center', color=TEXT_SECONDARY, fontweight='600',
-                bbox=dict(boxstyle='round,pad=0.5', facecolor=BG_PANEL, alpha=0.9, edgecolor=BORDER_COLOR)
+                ha='center', va='center', color=text_secondary_color, fontweight='600',
+                bbox=dict(boxstyle='round,pad=0.5', facecolor=legend_bg, alpha=0.9, edgecolor=border_color)
             )
         
         # Markers (always show)
@@ -1067,38 +1137,59 @@ def plot_all_coverage_grid(
         ax.plot(AIRPORT_LON, AIRPORT_LAT, '^', color=TEXT_PRIMARY, markersize=7,
                 markeredgecolor='black', markeredgewidth=0.6, zorder=10)
         
-        # Draw airport range ring for FL5, FL10, FL20
-        draw_airport_range_ring(ax, fl, linewidth=1.5, color='white', alpha=0.85)
+        # Draw airport range ring for FL5, FL10, FL20, FL50
+        if fl in AIRPORT_RANGE_RINGS:
+            radius_km = AIRPORT_RANGE_RINGS[fl]
+            lat_rad = np.radians(AIRPORT_LAT)
+            km_per_deg_lat = 111.0
+            km_per_deg_lon = 111.0 * np.cos(lat_rad)
+            radius_lat = radius_km / km_per_deg_lat
+            radius_lon = radius_km / km_per_deg_lon
+            theta = np.linspace(0, 2 * np.pi, 100)
+            circle_lon = AIRPORT_LON + radius_lon * np.cos(theta)
+            circle_lat = AIRPORT_LAT + radius_lat * np.sin(theta)
+            ax.plot(circle_lon, circle_lat, 'w--', linewidth=1.2, alpha=1.0, zorder=15)
+            # Add text label near the circle showing the radius
+            # Place label at top of circle
+            label_lon = AIRPORT_LON
+            label_lat = AIRPORT_LAT + radius_lat * 1.1
+            ax.text(label_lon, label_lat, f'{radius_km:.1f}km', fontsize=8, color='white',
+                    ha='center', va='bottom', fontweight='bold',
+                    bbox=dict(boxstyle='round,pad=0.2', facecolor='black', alpha=0.6, edgecolor='none'))
         
         # Title with FL and altitude
         alt_m = fl_to_m(fl)
         ax.set_title(f'FL{int(fl)} ({alt_m:.0f}m)', fontsize=14, fontweight='700', color=ACCENT_PRIMARY, pad=10)
         
         # Axis styling
-        ax.tick_params(colors=TEXT_SECONDARY, labelsize=9)
+        ax.tick_params(colors=text_secondary_color, labelsize=9)
         for spine in ax.spines.values():
-            spine.set_color(BORDER_COLOR)
+            spine.set_color(border_color)
     
     # Add overall title
     fig.suptitle(
         'Radar Coverage Analysis - All Flight Levels',
-        fontsize=18, fontweight='700', color=TEXT_PRIMARY, y=0.98
+        fontsize=18, fontweight='700', color=text_color, y=0.98
     )
     
     # Add legend for the whole figure
     from matplotlib.patches import Patch
+    # Use appropriate marker background for legend visibility
+    marker_bg = bg_color if for_export else 'w'
     legend_elements = [
         Patch(facecolor=COVERAGE_VISIBLE, alpha=green_alpha, label='Visible'),
-        plt.Line2D([0], [0], marker='*', color='w', markerfacecolor=ACCENT_PRIMARY, 
+        plt.Line2D([0], [0], marker='*', color=marker_bg, markerfacecolor=ACCENT_PRIMARY, 
                    markersize=9, label='Radar', markeredgecolor='white'),
-        plt.Line2D([0], [0], marker='^', color='w', markerfacecolor=TEXT_PRIMARY, 
+        plt.Line2D([0], [0], marker='^', color=marker_bg, markerfacecolor=TEXT_PRIMARY, 
                    markersize=7, label='Airport', markeredgecolor='black'),
+        plt.Line2D([0], [0], linestyle='--', color='white', linewidth=1.5, 
+                   label='Airport Range'),
     ]
     if show_blocked:
         legend_elements.insert(1, Patch(facecolor=BLOCKED_AREA, alpha=red_alpha, label='Blocked'))
     
     fig.legend(handles=legend_elements, loc='lower center', ncol=len(legend_elements),
-               fontsize=11, facecolor=BG_PANEL, edgecolor=BORDER_COLOR, labelcolor=TEXT_PRIMARY,
+               fontsize=11, facecolor=legend_bg, edgecolor=border_color, labelcolor=text_color,
                bbox_to_anchor=(0.5, 0.01))
     
     plt.tight_layout(rect=[0, 0.05, 1, 0.95])
@@ -1152,9 +1243,10 @@ def create_png_zip(
                 show_blocked=show_blocked,
                 green_alpha=green_alpha,
                 red_alpha=red_alpha,
+                for_export=True,  # Use white background for export
             )
             img_buf = BytesIO()
-            fig.savefig(img_buf, format='png', dpi=dpi, bbox_inches='tight', facecolor=BG_PANEL)
+            fig.savefig(img_buf, format='png', dpi=dpi, bbox_inches='tight', facecolor='white')
             plt.close(fig)
             img_buf.seek(0)
             zf.writestr(f'coverage_FL{int(fl)}.png', img_buf.getvalue())
@@ -1187,9 +1279,10 @@ def create_png_zip(
             show_blocked=show_blocked,
             green_alpha=green_alpha,
             red_alpha=red_alpha,
+            for_export=True,  # Use white background for export
         )
         img_buf_grid = BytesIO()
-        fig_grid.savefig(img_buf_grid, format='png', dpi=dpi, bbox_inches='tight', facecolor=BG_PANEL)
+        fig_grid.savefig(img_buf_grid, format='png', dpi=dpi, bbox_inches='tight', facecolor='white')
         plt.close(fig_grid)
         img_buf_grid.seek(0)
         zf.writestr('coverage_ALL_FLs.png', img_buf_grid.getvalue())

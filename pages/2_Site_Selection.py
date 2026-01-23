@@ -18,6 +18,8 @@ import zipfile
 import json
 import tempfile
 import os
+import hashlib
+import pandas as pd
 
 # Import shared utilities from main app
 import sys
@@ -64,6 +66,18 @@ try:
     HAS_KMZ_EXPORT = True
 except ImportError:
     HAS_KMZ_EXPORT = False
+
+# Import scoring modules
+try:
+    from score_numba_enu import (
+        normalize_enu_and_geo,
+        score_one_candidate_fullgrid_numba_enu
+    )
+    from LOS_numba_enu import latlon_to_xy_m, coverage_map_numba_xy
+    HAS_SCORING_MODULES = True
+except ImportError as e:
+    HAS_SCORING_MODULES = False
+    SCORING_IMPORT_ERROR = str(e)
 
 # Import contextily for basemaps
 if HAS_CONTEXTILY:
@@ -266,7 +280,8 @@ def compute_user_masks(terrain_data, config):
 # ============================================================================
 
 def plot_single_mask(mask, lats, lons, Z_raw, title, radar_lat=None, radar_lon=None,
-                     bg_style="terrain", excluded_alpha=0.6, figsize=(6, 5)):
+                     bg_style="terrain", excluded_alpha=0.6, figsize=(6, 5),
+                     for_export=False):
     """
     Plot a single constraint mask overlaid on terrain/basemap.
     
@@ -278,10 +293,25 @@ def plot_single_mask(mask, lats, lons, Z_raw, title, radar_lat=None, radar_lon=N
         radar_lat, radar_lon: optional radar position marker
         bg_style: "terrain" or "satellite" or "streets"
         excluded_alpha: opacity for excluded areas
+        for_export: if True, use white background with dark text for PNG export
     """
+    # Color scheme based on context
+    if for_export:
+        bg_color = 'white'
+        text_color = '#1a1a1a'
+        text_secondary_color = '#333333'
+        border_color = '#cccccc'
+        legend_bg = 'white'
+    else:
+        bg_color = BG_PANEL
+        text_color = TEXT_PRIMARY
+        text_secondary_color = TEXT_SECONDARY
+        border_color = BORDER_COLOR
+        legend_bg = BG_PANEL
+    
     fig, ax = plt.subplots(figsize=figsize)
-    fig.patch.set_facecolor(BG_PANEL)
-    ax.set_facecolor(BG_PANEL)
+    fig.patch.set_facecolor(bg_color)
+    ax.set_facecolor(bg_color)
     
     extent = [lons.min(), lons.max(), lats.min(), lats.max()]
     lon_grid, lat_grid = np.meshgrid(lons, lats)
@@ -326,31 +356,46 @@ def plot_single_mask(mask, lats, lons, Z_raw, title, radar_lat=None, radar_lon=N
     # Statistics
     admissible_pct = np.sum(mask) / mask.size * 100
     ax.text(0.02, 0.98, f'{admissible_pct:.1f}% valid', transform=ax.transAxes,
-            fontsize=9, va='top', color=TEXT_PRIMARY, fontweight='600',
-            bbox=dict(boxstyle='round,pad=0.3', facecolor=BG_PANEL, alpha=0.9, edgecolor=BORDER_COLOR))
+            fontsize=9, va='top', color=text_color, fontweight='600',
+            bbox=dict(boxstyle='round,pad=0.3', facecolor=legend_bg, alpha=0.9, edgecolor=border_color))
     
     # Styling
-    ax.set_xlabel('Longitude (°)', fontsize=9, color=TEXT_SECONDARY)
-    ax.set_ylabel('Latitude (°)', fontsize=9, color=TEXT_SECONDARY)
+    ax.set_xlabel('Longitude (°)', fontsize=9, color=text_secondary_color)
+    ax.set_ylabel('Latitude (°)', fontsize=9, color=text_secondary_color)
     ax.set_title(title, fontsize=11, fontweight='600', color=ACCENT_PRIMARY)
-    ax.tick_params(colors=TEXT_SECONDARY, labelsize=8)
+    ax.tick_params(colors=text_secondary_color, labelsize=8)
     for spine in ax.spines.values():
-        spine.set_color(BORDER_COLOR)
-    ax.legend(loc='upper right', fontsize=8, facecolor=BG_PANEL, edgecolor=BORDER_COLOR, labelcolor=TEXT_PRIMARY)
+        spine.set_color(border_color)
+    ax.legend(loc='upper right', fontsize=8, facecolor=legend_bg, edgecolor=border_color, labelcolor=text_color)
     
     plt.tight_layout()
     return fig
 
 
 def plot_combined_mask(mask, lats, lons, Z_raw, radar_lat=None, radar_lon=None,
-                       bg_style="terrain", admissible_alpha=0.5, excluded_alpha=0.6, figsize=(10, 8)):
+                       bg_style="terrain", admissible_alpha=0.5, excluded_alpha=0.6, figsize=(10, 8),
+                       for_export=False):
     """
     Plot the combined (final) constraint mask with larger size.
     Only excluded areas are shown in grey, valid areas are transparent.
     """
+    # Color scheme based on context
+    if for_export:
+        bg_color = 'white'
+        text_color = '#1a1a1a'
+        text_secondary_color = '#333333'
+        border_color = '#cccccc'
+        legend_bg = 'white'
+    else:
+        bg_color = BG_PANEL
+        text_color = TEXT_PRIMARY
+        text_secondary_color = TEXT_SECONDARY
+        border_color = BORDER_COLOR
+        legend_bg = BG_PANEL
+    
     fig, ax = plt.subplots(figsize=figsize)
-    fig.patch.set_facecolor(BG_PANEL)
-    ax.set_facecolor(BG_PANEL)
+    fig.patch.set_facecolor(bg_color)
+    ax.set_facecolor(bg_color)
     
     extent = [lons.min(), lons.max(), lats.min(), lats.max()]
     lon_grid, lat_grid = np.meshgrid(lons, lats)
@@ -360,8 +405,8 @@ def plot_combined_mask(mask, lats, lons, Z_raw, radar_lat=None, radar_lon=None,
         Z_plot = np.ma.masked_where(Z_raw < -100, Z_raw)
         terrain_im = ax.contourf(lon_grid, lat_grid, Z_plot, levels=30, cmap='terrain', alpha=1.0)
         cbar = plt.colorbar(terrain_im, ax=ax, shrink=0.7, pad=0.02)
-        cbar.set_label('Elevation (m)', fontsize=10, color=TEXT_SECONDARY)
-        cbar.ax.tick_params(colors=TEXT_SECONDARY)
+        cbar.set_label('Elevation (m)', fontsize=10, color=text_secondary_color)
+        cbar.ax.tick_params(colors=text_secondary_color)
     elif bg_style in ["satellite", "streets"] and HAS_CONTEXTILY:
         ax.set_xlim(extent[0], extent[1])
         ax.set_ylim(extent[2], extent[3])
@@ -400,24 +445,24 @@ def plot_combined_mask(mask, lats, lons, Z_raw, radar_lat=None, radar_lon=None,
     
     stats_text = f'Valid Sites: {admissible_count:,} ({admissible_pct:.2f}%)'
     ax.text(0.02, 0.98, stats_text, transform=ax.transAxes,
-            fontsize=11, va='top', color=TEXT_PRIMARY, fontweight='600',
-            bbox=dict(boxstyle='round,pad=0.4', facecolor=BG_PANEL, alpha=0.95, edgecolor=BORDER_COLOR))
+            fontsize=11, va='top', color=text_color, fontweight='600',
+            bbox=dict(boxstyle='round,pad=0.4', facecolor=legend_bg, alpha=0.95, edgecolor=border_color))
     
     # Styling
-    ax.set_xlabel('Longitude (°)', fontsize=11, color=TEXT_SECONDARY)
-    ax.set_ylabel('Latitude (°)', fontsize=11, color=TEXT_SECONDARY)
+    ax.set_xlabel('Longitude (°)', fontsize=11, color=text_secondary_color)
+    ax.set_ylabel('Latitude (°)', fontsize=11, color=text_secondary_color)
     ax.set_title('Combined Constraints - Valid Radar Sites', fontsize=14, fontweight='700', color=ACCENT_PRIMARY)
-    ax.tick_params(colors=TEXT_SECONDARY, labelsize=9)
+    ax.tick_params(colors=text_secondary_color, labelsize=9)
     for spine in ax.spines.values():
-        spine.set_color(BORDER_COLOR)
+        spine.set_color(border_color)
     
     # Legend for markers and excluded areas
     from matplotlib.patches import Patch
     legend_elements = [
-        Patch(facecolor=EXCLUDED_COLOR, alpha=excluded_alpha, edgecolor=BORDER_COLOR, label='Excluded'),
+        Patch(facecolor=EXCLUDED_COLOR, alpha=excluded_alpha, edgecolor=border_color, label='Excluded'),
     ]
     ax.legend(handles=legend_elements, loc='lower right', fontsize=10,
-              facecolor=BG_PANEL, edgecolor=BORDER_COLOR, labelcolor=TEXT_PRIMARY)
+              facecolor=legend_bg, edgecolor=border_color, labelcolor=text_color)
     
     plt.tight_layout()
     return fig
@@ -510,6 +555,448 @@ def export_candidates_csv(combined_mask, terrain_data):
         lines.append(f"{lats[i]:.6f},{lons[j]:.6f},{Z_raw[i, j]:.1f}")
     
     return "\n".join(lines)
+
+
+def export_masks_png_zip(masks_dict, combined_mask, terrain_data, bg_style="terrain", dpi=150):
+    """
+    Export all constraint masks as PNG images in a ZIP file.
+    Uses white background for better readability when printed/shared.
+    
+    Args:
+        masks_dict: dict of constraint name -> mask array
+        combined_mask: final combined mask
+        terrain_data: dict with lats, lons, Z_raw
+        bg_style: background style for plots
+        dpi: image resolution
+    
+    Returns:
+        bytes: ZIP file content
+    """
+    lats = terrain_data['lats']
+    lons = terrain_data['lons']
+    Z_raw = terrain_data['Z_raw']
+    
+    buf = BytesIO()
+    with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zf:
+        # Export individual constraint masks
+        for name, mask in masks_dict.items():
+            fig = plot_single_mask(
+                mask=mask,
+                lats=lats,
+                lons=lons,
+                Z_raw=Z_raw,
+                title=name,
+                radar_lat=None,
+                radar_lon=None,
+                bg_style=bg_style,
+                figsize=(10, 8),
+                for_export=True
+            )
+            img_buf = BytesIO()
+            fig.savefig(img_buf, format='png', dpi=dpi, bbox_inches='tight', facecolor='white')
+            plt.close(fig)
+            img_buf.seek(0)
+            
+            # Sanitize filename
+            safe_name = name.replace(' ', '_').replace('/', '_').replace('>', 'gt').replace('<', 'lt')
+            zf.writestr(f'constraint_{safe_name}.png', img_buf.getvalue())
+        
+        # Export combined mask
+        fig_combined = plot_combined_mask(
+            mask=combined_mask,
+            lats=lats,
+            lons=lons,
+            Z_raw=Z_raw,
+            radar_lat=None,
+            radar_lon=None,
+            bg_style=bg_style,
+            figsize=(12, 10),
+            for_export=True
+        )
+        img_buf_combined = BytesIO()
+        fig_combined.savefig(img_buf_combined, format='png', dpi=dpi, bbox_inches='tight', facecolor='white')
+        plt.close(fig_combined)
+        img_buf_combined.seek(0)
+        zf.writestr('combined_constraints.png', img_buf_combined.getvalue())
+    
+    return buf.getvalue()
+
+
+# ============================================================================
+# CANDIDATE SCORING FUNCTIONS
+# ============================================================================
+
+def _compute_candidate_cache_key(candidate_coords: np.ndarray, flight_level: int, 
+                                  radar_height_agl: float, n_samples: int) -> str:
+    """
+    Generate a cache key based on candidate coordinates and scoring parameters.
+    
+    Args:
+        candidate_coords: Array of (lat, lon) coordinates
+        flight_level: Flight level used for scoring (e.g., 100 for FL100)
+        radar_height_agl: Radar height above ground level in meters
+        n_samples: Number of samples for LOS computation
+    
+    Returns:
+        Hash string for caching
+    """
+    # Create a hash from coordinates and parameters
+    coords_bytes = candidate_coords.tobytes()
+    params_str = f"{flight_level}_{radar_height_agl}_{n_samples}"
+    combined = coords_bytes + params_str.encode('utf-8')
+    return hashlib.md5(combined).hexdigest()
+
+
+def compute_visibility_percentage(radar_lat: float, radar_lon: float, radar_h_agl: float,
+                                   X_m: np.ndarray, Y_m: np.ndarray, Zcorr: np.ndarray,
+                                   x0: float, y0: float, dx: float, dy: float,
+                                   target_alt_m: float = 3048.0,
+                                   n_samples: int = 100) -> float:
+    """
+    Compute visibility percentage for a single candidate location.
+    
+    Args:
+        radar_lat: Radar latitude in degrees
+        radar_lon: Radar longitude in degrees
+        radar_h_agl: Radar height above ground level in meters
+        X_m: X-axis (east) in ENU meters
+        Y_m: Y-axis (north) in ENU meters
+        Zcorr: Curvature-corrected terrain elevation grid
+        x0, y0: Grid origin in meters
+        dx, dy: Grid cell size in meters
+        target_alt_m: Target altitude in meters (default FL100 = 3048m)
+        n_samples: Number of samples for LOS ray casting
+    
+    Returns:
+        Visibility percentage (0-100)
+    """
+    if not HAS_SCORING_MODULES:
+        return 0.0
+    
+    # Convert radar position to ENU coordinates
+    radar_x, radar_y = latlon_to_xy_m(radar_lat, radar_lon)
+    
+    # Compute coverage map for this radar position at the target altitude
+    cov_map = coverage_map_numba_xy(
+        float(radar_x), float(radar_y), float(radar_h_agl),
+        float(target_alt_m),
+        X_m, Y_m,
+        float(x0), float(y0), float(dx), float(dy), Zcorr,
+        int(n_samples), 0.0  # margin_m = 0
+    )
+    
+    # Return percentage of visible points
+    return float(cov_map.mean() * 100.0)
+
+
+def compute_scores_for_candidates(combined_mask: np.ndarray, terrain_data: dict,
+                                   flight_levels: list = None,
+                                   radar_height_agl: float = 20.0,
+                                   n_samples: int = 100,
+                                   max_candidates: int = 5000,
+                                   progress_callback=None) -> pd.DataFrame:
+    """
+    Compute visibility scores for all candidate locations from the combined mask.
+    
+    Uses multi-flight-level weighted scoring from score_numba_enu.py:
+    - Flight levels: [5, 10, 20, 50, 100, 200, 300, 400]
+    - Weights: FL5/FL10/FL20 have weight 2, others weight 1
+    - Score = weighted average of visibility percentages across all FLs
+    
+    Args:
+        combined_mask: Boolean mask array (True = valid candidate location)
+        terrain_data: Dictionary containing terrain data with keys:
+                      'X_m', 'Y_m', 'Z_corrected', 'lats', 'lons'
+        flight_levels: List of flight levels to score (default: [5, 10, 20, 50, 100, 200, 300, 400])
+        radar_height_agl: Radar antenna height above ground level in meters
+        n_samples: Number of samples for LOS ray casting (higher = more accurate but slower)
+        max_candidates: Maximum number of candidates to score (downsamples if exceeded)
+        progress_callback: Optional callback function(current, total, message) for progress updates
+    
+    Returns:
+        DataFrame with columns: 'rank', 'latitude', 'longitude', 'elevation_m', 'score', 'cov_by_fl'
+        sorted by score descending (weighted average across flight levels)
+    """
+    if not HAS_SCORING_MODULES:
+        return pd.DataFrame(columns=['rank', 'latitude', 'longitude', 'elevation_m', 'score'])
+    
+    # Default flight levels matching score_numba_enu.py
+    if flight_levels is None:
+        flight_levels = [5, 10, 20, 50, 100, 200, 300, 400]
+    
+    # Extract coordinate arrays from terrain data
+    lats = terrain_data['lats']
+    lons = terrain_data['lons']
+    X_m = terrain_data['X_m']
+    Y_m = terrain_data['Y_m']
+    Z_corrected = terrain_data['Z_corrected']
+    Z_raw = terrain_data['Z_raw']
+    
+    # Normalize ENU grid for consistent indexing
+    X_m_norm, Y_m_norm, Zcorr_norm, lats_norm, lons_norm = normalize_enu_and_geo(
+        X_m, Y_m, Z_corrected, lats, lons
+    )
+    
+    # Compute grid parameters for uniform grid
+    x0 = float(X_m_norm[0])
+    y0 = float(Y_m_norm[0])
+    dx = float(X_m_norm[1] - X_m_norm[0])
+    dy = float(Y_m_norm[1] - Y_m_norm[0])
+    
+    # Extract candidate coordinates from mask
+    i_rows, j_cols = np.where(combined_mask)
+    n_total_candidates = len(i_rows)
+    
+    if n_total_candidates == 0:
+        return pd.DataFrame(columns=['rank', 'latitude', 'longitude', 'elevation_m', 'score'])
+    
+    # Downsample if too many candidates
+    if n_total_candidates > max_candidates:
+        # Use stratified sampling to maintain spatial distribution
+        step = n_total_candidates // max_candidates
+        indices = np.arange(0, n_total_candidates, step)[:max_candidates]
+        i_rows = i_rows[indices]
+        j_cols = j_cols[indices]
+    
+    n_candidates = len(i_rows)
+    
+    # Prepare results storage
+    results = []
+    
+    # Score each candidate using multi-FL weighted scoring
+    for idx, (i, j) in enumerate(zip(i_rows, j_cols)):
+        # Get candidate coordinates
+        lat = float(lats[i])
+        lon = float(lons[j])
+        elevation = float(Z_raw[i, j])
+        
+        # Update progress if callback provided
+        if progress_callback is not None:
+            progress_callback(idx + 1, n_candidates, f"Scoring candidate {idx + 1}/{n_candidates}")
+        
+        # Compute weighted score using multi-FL scoring from score_numba_enu
+        score, cov_by_fl = score_one_candidate_fullgrid_numba_enu(
+            radar_lat=lat,
+            radar_lon=lon,
+            radar_height_agl_m=radar_height_agl,
+            flight_levels=flight_levels,
+            X_m=X_m_norm,
+            Y_m=Y_m_norm,
+            Zcorr=Zcorr_norm,
+            x0=x0, y0=y0, dx=dx, dy=dy,
+            n_samples=n_samples,
+            margin_m=0.0,
+            show_progress=False  # Don't print to console
+        )
+        
+        results.append({
+            'latitude': lat,
+            'longitude': lon,
+            'elevation_m': elevation,
+            'score': score,
+            'cov_by_fl': cov_by_fl
+        })
+    
+    # Create DataFrame and sort by score (weighted average)
+    df = pd.DataFrame(results)
+    df = df.sort_values('score', ascending=False).reset_index(drop=True)
+    
+    # Add rank column (1-indexed)
+    df.insert(0, 'rank', range(1, len(df) + 1))
+    
+    return df
+
+
+@st.cache_data(show_spinner=False)
+def compute_scores_cached(candidate_coords_bytes: bytes, terrain_data_hash: str,
+                           lats: np.ndarray, lons: np.ndarray,
+                           X_m: np.ndarray, Y_m: np.ndarray,
+                           Z_corrected: np.ndarray, Z_raw: np.ndarray,
+                           combined_mask: np.ndarray,
+                           flight_levels_tuple: tuple, radar_height_agl: float,
+                           n_samples: int, max_candidates: int) -> pd.DataFrame:
+    """
+    Cached version of score computation.
+    
+    Uses bytes representation of candidate coordinates for cache key stability.
+    This allows Streamlit to cache results across reruns when parameters are unchanged.
+    """
+    # Reconstruct terrain_data dict for the scoring function
+    terrain_data = {
+        'lats': lats,
+        'lons': lons,
+        'X_m': X_m,
+        'Y_m': Y_m,
+        'Z_corrected': Z_corrected,
+        'Z_raw': Z_raw
+    }
+    
+    # Compute scores without progress callback (caching doesn't support callbacks)
+    return compute_scores_for_candidates(
+        combined_mask=combined_mask,
+        terrain_data=terrain_data,
+        flight_levels=list(flight_levels_tuple),
+        radar_height_agl=radar_height_agl,
+        n_samples=n_samples,
+        max_candidates=max_candidates,
+        progress_callback=None
+    )
+
+
+def get_scores_with_caching(combined_mask: np.ndarray, terrain_data: dict,
+                            flight_levels: list = None, radar_height_agl: float = 20.0,
+                            n_samples: int = 100, max_candidates: int = 5000,
+                            use_cache: bool = True) -> pd.DataFrame:
+    """
+    Wrapper function that handles caching logic for score computation.
+    
+    Args:
+        combined_mask: Boolean mask of valid candidate locations
+        terrain_data: Dictionary containing terrain arrays
+        flight_levels: List of flight levels for multi-FL weighted scoring
+        radar_height_agl: Radar height above ground in meters
+        n_samples: Number of LOS samples
+        max_candidates: Maximum candidates to score
+        use_cache: Whether to use Streamlit caching
+    
+    Returns:
+        DataFrame with scored candidates
+    """
+    if flight_levels is None:
+        flight_levels = [5, 10, 20, 50, 100, 200, 300, 400]
+    
+    if use_cache:
+        # Generate hash for terrain data
+        terrain_hash = hashlib.md5(
+            terrain_data['Z_corrected'].tobytes()[:10000]  # Use subset for speed
+        ).hexdigest()
+        
+        # Get candidate coordinates bytes for cache key
+        i_rows, j_cols = np.where(combined_mask)
+        candidate_coords_bytes = np.column_stack([i_rows, j_cols]).tobytes()
+        
+        return compute_scores_cached(
+            candidate_coords_bytes=candidate_coords_bytes,
+            terrain_data_hash=terrain_hash,
+            lats=terrain_data['lats'],
+            lons=terrain_data['lons'],
+            X_m=terrain_data['X_m'],
+            Y_m=terrain_data['Y_m'],
+            Z_corrected=terrain_data['Z_corrected'],
+            Z_raw=terrain_data['Z_raw'],
+            combined_mask=combined_mask,
+            flight_levels_tuple=tuple(flight_levels),
+            radar_height_agl=radar_height_agl,
+            n_samples=n_samples,
+            max_candidates=max_candidates
+        )
+    else:
+        return compute_scores_for_candidates(
+            combined_mask=combined_mask,
+            terrain_data=terrain_data,
+            flight_levels=flight_levels,
+            radar_height_agl=radar_height_agl,
+            n_samples=n_samples,
+            max_candidates=max_candidates
+        )
+
+
+def export_ranked_csv(df: pd.DataFrame) -> str:
+    """
+    Export all ranked candidates to CSV format.
+    
+    Args:
+        df: DataFrame with scored candidates (must have rank, latitude, longitude, score)
+    
+    Returns:
+        CSV string with headers
+    """
+    lines = ["rank,latitude,longitude,score"]
+    
+    for _, row in df.iterrows():
+        lines.append(f"{int(row['rank'])},{row['latitude']:.6f},{row['longitude']:.6f},{row['score']:.2f}")
+    
+    return "\n".join(lines)
+
+
+def export_ranked_kmz(df: pd.DataFrame) -> bytes:
+    """
+    Export all ranked candidates to KMZ format for Google Earth.
+    
+    Args:
+        df: DataFrame with scored candidates
+    
+    Returns:
+        KMZ file bytes
+    """
+    import xml.etree.ElementTree as ET
+    
+    n_candidates = len(df)
+    
+    # Create KML structure
+    kml = ET.Element("kml", xmlns="http://www.opengis.net/kml/2.2")
+    document = ET.SubElement(kml, "Document")
+    ET.SubElement(document, "name").text = f"Ranked Radar Site Candidates ({n_candidates} sites)"
+    ET.SubElement(document, "description").text = "Best candidate locations ranked by visibility percentage"
+    
+    # Style for placemarks - green pins
+    style = ET.SubElement(document, "Style", id="candidate_style")
+    icon_style = ET.SubElement(style, "IconStyle")
+    ET.SubElement(icon_style, "color").text = "ff00ff00"  # Green (AABBGGRR)
+    ET.SubElement(icon_style, "scale").text = "1.0"
+    icon = ET.SubElement(icon_style, "Icon")
+    ET.SubElement(icon, "href").text = "http://maps.google.com/mapfiles/kml/pushpin/grn-pushpin.png"
+    
+    # Style for top 3 - larger gold pins
+    style_top = ET.SubElement(document, "Style", id="top3_style")
+    icon_style_top = ET.SubElement(style_top, "IconStyle")
+    ET.SubElement(icon_style_top, "color").text = "ff00d7ff"  # Gold (AABBGGRR)
+    ET.SubElement(icon_style_top, "scale").text = "1.3"
+    icon_top = ET.SubElement(icon_style_top, "Icon")
+    ET.SubElement(icon_top, "href").text = "http://maps.google.com/mapfiles/kml/pushpin/ylw-pushpin.png"
+    
+    # Create folder for candidates
+    folder = ET.SubElement(document, "Folder")
+    ET.SubElement(folder, "name").text = f"All Candidates ({n_candidates})"
+    ET.SubElement(folder, "description").text = "Ranked by weighted visibility score (FL5-FL400)"
+    
+    # Add placemarks for each candidate
+    for _, row in df.iterrows():
+        placemark = ET.SubElement(folder, "Placemark")
+        rank = int(row['rank'])
+        score = row['score']
+        
+        ET.SubElement(placemark, "name").text = f"#{rank} – {score:.2f}%"
+        
+        # Add description with details
+        desc = f"Rank: {rank}\n"
+        desc += f"Latitude: {row['latitude']:.6f}°N\n"
+        desc += f"Longitude: {row['longitude']:.6f}°E\n"
+        if 'elevation_m' in row:
+            desc += f"Elevation: {row['elevation_m']:.1f}m\n"
+        desc += f"Score: {score:.2f}%"
+        ET.SubElement(placemark, "description").text = desc
+        
+        # Use gold style for top 3, green for others
+        if rank <= 3:
+            ET.SubElement(placemark, "styleUrl").text = "#top3_style"
+        else:
+            ET.SubElement(placemark, "styleUrl").text = "#candidate_style"
+        
+        # Add point geometry
+        point = ET.SubElement(placemark, "Point")
+        coords = ET.SubElement(point, "coordinates")
+        elev = row.get('elevation_m', 0)
+        coords.text = f"{row['longitude']},{row['latitude']},{elev}"
+    
+    # Convert to KMZ (zipped KML)
+    kml_str = ET.tostring(kml, encoding='utf-8', xml_declaration=True)
+    
+    kmz_buffer = BytesIO()
+    with zipfile.ZipFile(kmz_buffer, 'w', zipfile.ZIP_DEFLATED) as kmz:
+        kmz.writestr('doc.kml', kml_str)
+    
+    return kmz_buffer.getvalue()
 
 
 # ============================================================================
@@ -904,6 +1391,18 @@ def main():
         st.session_state.site_masks_dict = {}
     if 'site_combined_mask' not in st.session_state:
         st.session_state.site_combined_mask = None
+    
+    # Scoring session state keys
+    if 'scored_candidates_df' not in st.session_state:
+        st.session_state.scored_candidates_df = None
+    if 'ranked_df' not in st.session_state:
+        st.session_state.ranked_df = None
+    if 'ranked_kmz_bytes' not in st.session_state:
+        st.session_state.ranked_kmz_bytes = None
+    if 'ranked_csv_text' not in st.session_state:
+        st.session_state.ranked_csv_text = None
+    if 'scoring_complete' not in st.session_state:
+        st.session_state.scoring_complete = False
     
     # =========================================================================
     # SIDEBAR - CONSTRAINT CONFIGURATION
@@ -1746,6 +2245,21 @@ def main():
     with col4:
         st.metric("Valid Percentage", f"{final_pct:.2f}%")
     
+    # =========================================================================
+    # SECTION 2.5: CANDIDATE SCORING
+    # =========================================================================
+    st.markdown("---")
+    st.header("Candidate Scoring")
+    
+    if final_admissible == 0:
+        st.warning("No valid candidates remaining after constraints. Adjust constraints to enable scoring.")
+        st.button("Apply Score", disabled=True, key="apply_score_btn", use_container_width=True)
+    else:
+        st.info(f"Score {final_admissible:,} candidate sites based on radar visibility coverage.")
+        if st.button("Apply Score", type="primary", key="apply_score_btn", use_container_width=True):
+            # Navigate directly to Scoring Results page (demo mode)
+            st.switch_page("pages/3_Scoring_Results.py")
+    
     st.markdown("---")
     
     # =========================================================================
@@ -1807,6 +2321,40 @@ def main():
             "text/csv",
             use_container_width=True,
             key="candidates_csv_download"
+        )
+    
+    # PNG Export
+    st.markdown("---")
+    st.subheader("PNG Export (Images)")
+    st.caption("High-resolution constraint mask images with white background")
+    
+    png_col1, png_col2 = st.columns([2, 1])
+    with png_col1:
+        st.markdown("""
+        Export constraint masks as PNG images:
+        - Individual constraint mask for each constraint
+        - Combined constraints overview
+        - White background for printing/sharing
+        - High resolution (150 DPI)
+        """)
+        
+        png_dpi = st.selectbox(
+            "Image Resolution",
+            options=[100, 150, 200, 300],
+            index=1,
+            key="png_dpi_selector",
+            help="Higher DPI = larger file size but better quality"
+        )
+    
+    with png_col2:
+        png_data = export_masks_png_zip(masks_dict, combined_mask, terrain_data, dpi=png_dpi)
+        st.download_button(
+            f"Download PNG ZIP ({len(masks_dict)+1} images)",
+            png_data,
+            "constraint_masks.zip",
+            "application/zip",
+            use_container_width=True,
+            key="png_download"
         )
     
     # KMZ Export (if available)
