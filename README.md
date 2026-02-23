@@ -1,21 +1,19 @@
-# Modelling Radar Thales — Coverage, Masks & Scoring (BoGE DMW)
+# Radar Site Placement Optimizer
 
-This repository contains a complete pipeline to:
+Interactive radar coverage analysis + site placement optimization.
 
-1. Load DTED terrain
-2. Compute **Line-of-Sight (LOS)** radar coverage maps at required Flight Levels
-3. Build **constraint masks** (roads/buildings/protected areas/slope/etc.)
-4. Generate **authorized candidate sites**
-5. Score and rank candidates using a **Numba-accelerated exact LOS** method
-6. Export results to **KML/KMZ** (Google Earth) and NPZ (reproducibility)
+This project is a **radar coverage analysis tool** where you load terrain data and then:
 
-> **Project context:** CentraleSupélec — Bachelor of Global Engineering (Data & Modeling Weeks) with Thales.
+1. **Compute coverage** for **8 flight levels** from a radar defined by `(lat, lon, height)` using a terrain-aware LOS model.
+2. **Create constraints/requirements** on the terrain (example: close to electrical stations, far from dwellings/buildings, outside protected areas, slope limits) to generate **candidate locations** where the radar can be placed.
+3. **Score and rank candidates** by computing coverage at all flight levels for each candidate, then export the best locations.
+
+The main deliverable is a **Streamlit UI** (`radar_coverage_app.py`) with 3 pages: Coverage Analysis, Site Selection, and Scoring Results.
 
 ---
 
-## 1) Quick Start (Recommended Path)
+## Quick Start (UI)
 
-### 1.1 Install
 ```bash
 python -m venv .venv
 source .venv/bin/activate  # macOS/Linux
@@ -23,52 +21,45 @@ source .venv/bin/activate  # macOS/Linux
 pip install -r requirements.txt
 ```
 
-### 1.2 Verify terrain loading
+Launch the app:
+
 ```bash
-python visualize_terrain.py
+streamlit run radar_coverage_app.py
 ```
 
-### 1.3 Compute coverage (single radar position)
-
-**Reference version (slower, clear):**
-```bash
-python main_coverage.py
-```
-
-**Numba ENU exact LOS (recommended for full-grid performance):**
-```bash
-python FLs_numba_enu.py
-```
-
-**One FL full-map (Numba):**
-```bash
-python fl_fullmap_numba.py
-```
-
-### 1.4 Full pipeline: masks → candidates → scoring → export
-
-1. Generate authorized candidates from constraints:
-```bash
-python generate_candidates_full_constraints.py
-
-# or relaxed versions:
-python generate_candidates_relaxed.py
-python generate_candidates_no_residential.py
-```
-
-2. Score candidates (Numba exact LOS in ENU):
-```bash
-python run_scoring_numba_enu.py
-```
-
-3. Export top-scored sites to Google Earth:
-```bash
-python export_scored_points_weighted_kml.py
-```
+The UI will open in your browser (typically `http://localhost:8501`).
 
 ---
 
-## 2) Terrain Data Format (NPZ)
+## What You Can Do In The App
+
+### 1) Coverage Analysis
+- Load a terrain NPZ file
+- Set radar position (`lat`, `lon`) and radar height
+- Compute LOS coverage maps for the supported flight levels
+- Export results (KMZ for Google Earth, PNG/CSV depending on the page options)
+
+### 2) Site Selection (Constraints)
+- Build constraint masks (allowed / forbidden) from your data and thresholds
+- Combine constraints to generate admissible candidate locations
+- Export masks and candidate lists
+
+Examples of constraints this project supports:
+- Electrical stations proximity / keep-away distance
+- Buildings / dwellings exclusion buffers
+- Protected areas exclusion
+- Road proximity requirements
+- Slope thresholds
+- (Optional) airport visibility constraints, depending on available data
+
+### 3) Scoring Results
+- Compute coverage for each candidate at all flight levels
+- Aggregate into a score and rank sites
+- Export ranked results (including KMZ for visualization)
+
+---
+
+## Terrain Data Format (NPZ)
 
 The terrain file must contain:
 
@@ -89,7 +80,7 @@ np.savez("terrain_mat.npz", lat=lats, lon=lons, ter=Z)
 
 ---
 
-## 3) Coordinate System: ENU + Earth Curvature Correction
+## Coordinate System (ENU) + Earth Curvature Correction
 
 To keep all physical computations consistent (distance, slope, LOS sampling), this project centralizes coordinate conversion using:
 
@@ -108,7 +99,7 @@ This is important for 50km-scale geometry.
 
 ---
 
-## 4) LOS Algorithm (Exact)
+## LOS Algorithm (Exact)
 
 A target point is **visible** if along the segment radar → target:
 
@@ -128,7 +119,7 @@ A target point is **visible** if along the segment radar → target:
 
 ---
 
-## 5) Flight Levels (Tender Requirement)
+## Flight Levels
 
 **Supported Flight Levels:**
 
@@ -140,7 +131,9 @@ $$\text{alt}_m = \text{FL} \times 100 \times 0.3048$$
 
 ---
 
-## 6) Coverage Computation Modules
+## CLI / Scripts (Optional)
+
+The Streamlit app is the easiest way to explore the project, but the repository also contains standalone scripts (useful for batch runs).
 
 ### 6.1 Reference version (clear but slow)
 
@@ -158,7 +151,7 @@ $$\text{alt}_m = \text{FL} \times 100 \times 0.3048$$
 
 ---
 
-## 7) Masks & Constraints (Site Selection)
+## Masks & Constraints (Site Selection)
 
 Constraint masks are boolean grids where:
 
@@ -195,7 +188,7 @@ Constraint masks are boolean grids where:
 
 ---
 
-## 8) Scoring & Ranking Candidates (Numba ENU)
+## Scoring & Ranking Candidates (Numba ENU)
 
 The scoring stage:
 
@@ -235,7 +228,7 @@ The scoring stage:
 
 ---
 
-## 10) Google Earth Export (KML/KMZ)
+## Google Earth Export (KML/KMZ)
 
 Exports are handled by:
 
@@ -245,23 +238,7 @@ Exports are handled by:
 
 ---
 
-## 11) Streamlit App (Interactive)
-
-**Launch:**
-```bash
-streamlit run radar_coverage_app.py
-```
-
-The app allows:
-
-- Terrain inspection
-- Running coverage
-- Viewing results with different backgrounds
-- Exporting outputs
-
----
-
-## 12) Project Structure
+## Project Structure
 ```text
 modelling_radar_thales/
 ├── radar_coverage_app.py
@@ -294,7 +271,7 @@ modelling_radar_thales/
 
 ---
 
-## 13) Troubleshooting
+## Troubleshooting
 
 ### First run is slow
 
@@ -315,31 +292,5 @@ Some datasets store axes descending. Use normalization utilities to avoid `searc
 
 ---
 
-## 14) Contributing / Git Workflow
-
-### Add README to your Git repo
-
-1. Create or replace the README file:
-```bash
-touch README.md
-# paste this content into README.md
-```
-
-2. Commit and push:
-```bash
-git add README.md
-git commit -m "Add project README"
-git push origin main
-```
-
-If you are working on a branch:
-```bash
-git push origin <branch-name>
-# then open a Merge Request / Pull Request to main
-```
-
----
-
-## License
-
-Educational use (CentraleSupélec / Thales project).
+## Notes
+- Large datasets (terrain/GeoJSON/KMZ) can make the repository heavy. If you want a lightweight version for sharing, keep small sample files in the repo and host the full datasets elsewhere.
