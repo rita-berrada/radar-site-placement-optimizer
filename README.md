@@ -1,296 +1,289 @@
 # Radar Site Placement Optimizer
 
-Interactive radar coverage analysis + site placement optimization.
+Given terrain elevation data and geographic constraints, find and rank the best locations to place a surveillance radar to maximize airspace coverage over the Nice / French Riviera area.
 
-This project is a **radar coverage analysis tool** where you load terrain data and then:
+This project was developed as part of a mission for **Thales**. It is structured as a **3-stage pipeline**, each stage implemented as both a standalone Python script and a page in a Streamlit web app.
 
-1. **Compute coverage** for **8 flight levels** from a radar defined by `(lat, lon, height)` using a terrain-aware LOS model.
-2. **Create constraints/requirements** on the terrain (example: close to electrical stations, far from dwellings/buildings, outside protected areas, slope limits) to generate **candidate locations** where the radar can be placed.
-3. **Score and rank candidates** by computing coverage at all flight levels for each candidate, then export the best locations.
-
-The main deliverable is a **Streamlit UI** (`radar_coverage_app.py`) with 3 pages: Coverage Analysis, Site Selection, and Scoring Results.
+![LOS illustration](images/los_illustration.png)
 
 ---
 
-## Quick Start (UI)
+## Pipeline Overview
+
+```mermaid
+flowchart TD
+    T1[/"terrain_mat.npz — provided by Thales"/]
+    T2[/"geographical_data/ — OpenStreetMap via Overpass Turbo"/]
+
+    T1 --> S1
+    subgraph S1["Stage 1 — Coverage Analysis"]
+        A["Given radar lat/lon/height, compute LOS coverage at 8 flight levels\nLOS_numba_enu.py · FLs_numba_enu.py · geo_utils_earth_curvature.py"]
+    end
+
+    T1 --> S2
+    T2 --> S2
+    subgraph S2["Stage 2 — Site Selection"]
+        B["Apply constraint masks → boolean grid of valid placement locations\nmask_*.py · generate_candidates_*.py"]
+    end
+
+    S2 --> C1[/"authorized_points_all_masks.npz"/]
+    C1 --> S3
+    T1 --> S3
+    subgraph S3["Stage 3 — Scoring"]
+        C["Run Stage 1 on every candidate, aggregate with FL weights → ranked list\nscore_numba_enu.py · run_scoring_numba_enu.py"]
+    end
+
+    S3 --> OUT[/"scored_candidates_fullgrid_enu.npz — lat, lon, score, cov_by_fl"/]
+```
+
+---
+
+## Quick Start
 
 ```bash
 python -m venv .venv
-source .venv/bin/activate  # macOS/Linux
-# .venv\Scripts\activate   # Windows (PowerShell)
+source .venv/bin/activate        # macOS/Linux
+# .venv\Scripts\activate         # Windows
+
 pip install -r requirements.txt
-```
-
-Launch the app:
-
-```bash
 streamlit run radar_coverage_app.py
 ```
 
-The UI will open in your browser (typically `http://localhost:8501`).
+> **Note:** Numba JIT-compiles the LOS kernel on first run. The first execution will be slower — subsequent runs are fast.
 
 ---
 
-## What You Can Do In The App
+## Stage 1 — Radar Coverage Analysis
 
-### 1) Coverage Analysis
-- Load a terrain NPZ file
-- Set radar position (`lat`, `lon`) and radar height
-- Compute LOS coverage maps for the supported flight levels
-- Export results (KMZ for Google Earth, PNG/CSV depending on the page options)
+### What it does
 
-### 2) Site Selection (Constraints)
-- Build constraint masks (allowed / forbidden) from your data and thresholds
-- Combine constraints to generate admissible candidate locations
-- Export masks and candidate lists
+Given a radar defined by `(lat, lon, height above ground)`, compute which points in the terrain grid are **visible** at each of the 8 supported flight levels, using a **Line of Sight (LOS)** model.
 
-Examples of constraints this project supports:
-- Electrical stations proximity / keep-away distance
-- Buildings / dwellings exclusion buffers
-- Protected areas exclusion
-- Road proximity requirements
-- Slope thresholds
-- (Optional) airport visibility constraints, depending on available data
+For each target point, the algorithm samples the radar → target ray at regular intervals and checks whether the terrain altitude stays below the LOS altitude at every sample. If any sample is blocked, the point is not visible.
 
-### 3) Scoring Results
-- Compute coverage for each candidate at all flight levels
-- Aggregate into a score and rank sites
-- Export ranked results (including KMZ for visualization)
+### Why Numba?
 
----
+LOS must be computed for every terrain point (potentially millions) at every flight level. Each check requires sampling 100+ points along the ray. Pure Python is far too slow for this. **Numba** JIT-compiles the inner loop to machine code and runs it in parallel across CPU cores using `prange`.
 
-## Terrain Data Format (NPZ)
+### Coordinate system: ENU + Earth curvature
 
-The terrain file must contain:
+Lat/lon coordinates are converted to a local **ENU (East-North-Up)** metric frame (X = East meters, Y = North meters from a reference point). This lets all distance/slope/LOS computations work in meters.
 
-- `lat`: 1D array of latitudes (degrees, WGS84)
-- `lon`: 1D array of longitudes (degrees, WGS84)
-- `ter`: 2D terrain elevation array in meters above sea level (MSL), shape `(len(lat), len(lon))`
+At 50km scale, Earth's curvature matters. A correction is applied to the terrain elevation:
 
-**Example:**
-```python
-import numpy as np
-
-lats = np.linspace(43.3, 44.0, 500)
-lons = np.linspace(6.7, 7.9, 600)
-Z = np.random.rand(500, 600) * 1000
-
-np.savez("terrain_mat.npz", lat=lats, lon=lons, ter=Z)
+```
+Z_corrected = Z_terrain - d² / (2R)
 ```
 
----
+where `d` is the horizontal distance to the radar and `R` is Earth's radius. Without this, distant terrain appears artificially higher than it really is relative to the LOS ray.
 
-## Coordinate System (ENU) + Earth Curvature Correction
+### Flight levels
 
-To keep all physical computations consistent (distance, slope, LOS sampling), this project centralizes coordinate conversion using:
+| Flight Level | Altitude (m) |
+|---|---|
+| FL5 | ~152 m |
+| FL10 | ~305 m |
+| FL20 | ~610 m |
+| FL50 | ~1524 m |
+| FL100 | ~3048 m |
+| FL200 | ~6096 m |
+| FL300 | ~9144 m |
+| FL400 | ~12192 m |
 
-- `geo_utils.py` / `geo_utils_earth_curvature.py`
+Conversion: `FL × 100 × 0.3048`
 
-It converts (lat, lon) into a local tangent plane (ENU):
+### Key files
 
-- **X (East)** meters from reference point
-- **Y (North)** meters from reference point
+| File | Role |
+|---|---|
+| `LOS_numba_enu.py` | Numba LOS kernel — samples each ray, checks terrain blockage, returns coverage map |
+| `FLs_numba_enu.py` | Full-grid coverage for one flight level |
+| `geo_utils_earth_curvature.py` | Lat/lon → ENU meters with Earth curvature correction |
+| `geo_utils.py` | Base coordinate utilities (used by scoring stage) |
+| `main_coverage.py` | **Standalone script**: compute coverage for all FLs, save maps and export KMZ |
 
-and applies a Z correction for Earth curvature:
-
-$$Z_{\text{ENU}} = Z_{\text{terrain}} - \frac{d^2}{2R}$$
-
-This is important for 50km-scale geometry.
-
----
-
-## LOS Algorithm (Exact)
-
-A target point is **visible** if along the segment radar → target:
-
-- At every sampled point, the terrain altitude is strictly below the LOS altitude.
-
-**Core logic:**
-
-- Interpolate terrain at sampled points (bilinear interpolation)
-- Compute LOS line altitude
-- Early exit as soon as blocked
-
-### Implementations
-
-- **Reference (Python)**: `LOS.py`
-- **Vectorized prototype**: `LOS_np.py`
-- **Fast exact ENU + Numba**: `LOS_numba_enu.py` ✅ (recommended)
+![Coverage maps — 8 flight levels](images/coverage_maps.png)
 
 ---
 
-## Flight Levels
+## Stage 2 — Site Selection (Constraint Masks)
 
-**Supported Flight Levels:**
+### What it does
 
-- FL5, FL10, FL20, FL50, FL100, FL200, FL300, FL400
+Build a **boolean grid** over the terrain where `True` = valid radar placement, `False` = forbidden. Each constraint is computed as a separate mask and then combined.
 
-**Conversion:**
+### Data collection
 
-$$\text{alt}_m = \text{FL} \times 100 \times 0.3048$$
+Geographic constraint data (roads, buildings, electrical stations, protected areas) was retrieved from **OpenStreetMap** using **[Overpass Turbo](https://overpass-turbo.eu/)** queries, then exported as GeoJSON files stored in `geographical_data/`.
 
----
+Geographic boundary constraints (French territory, coastline, 50km study radius) were applied directly in Python using lat/lon arithmetic — no external data required.
 
-## CLI / Scripts (Optional)
+### Constraints
 
-The Streamlit app is the easiest way to explore the project, but the repository also contains standalone scripts (useful for batch runs).
+| Constraint | Description | Method | File |
+|---|---|---|---|
+| Study area | 50km radius from Nice | Lat/lon distance filter | `mask_site_location.py` |
+| French territory | Exclude points outside France | Lat/lon bounding | `mask_site_location.py` |
+| Coastline buffer | Exclude sea and coastal strip | Lat/lon + elevation | `mask_site_location.py` |
+| Terrain slope | Exclude slopes above threshold | Gradient of elevation grid | `mask_slope.py` |
+| Road proximity | Must be within X meters of a road | Buffer around OSM road lines | `mask_roads.py` |
+| Building exclusion | Must be > X meters from buildings | Buffer around OSM building polygons | `mask_buildings.py` |
+| Residential exclusion | Exclude residential zones | OSM residential polygons | `mask_residential.py` |
+| Protected areas | Exclude national parks, forests | OSM protected area polygons | `mask_protected_areas.py` |
+| Electrical stations | Must be within X meters of a power station | Buffer around OSM station points | `mask_electric_stations.py` |
+| Airport LOS | Must have line of sight to the airport | Numba LOS check | `mask_see_airport.py` |
 
-### 6.1 Reference version (clear but slow)
+![Electrical stations — Overpass Turbo data overlaid on terrain](images/electrical_stations_map.png)
 
-- `coverage_analysis.py`
-- `main_coverage.py`
+### Candidate generation
 
-### 6.2 Accelerated versions
+Once all masks are combined, the remaining `True` points are the candidate locations:
 
-- `coverage_analysis_fast.py` (approx / batching style)
-- **Numba ENU full-grid**:
-  - `LOS_numba_enu.py`
-  - `FLs_numba_enu.py`
-  - `score_numba_enu.py`
-  - `run_scoring_numba_enu.py`
-
----
-
-## Masks & Constraints (Site Selection)
-
-Constraint masks are boolean grids where:
-
-- `True` = site allowed
-- `False` = site forbidden
-
-**Typical masks:**
-
-- **Road proximity**: keep sites close to roads / accessible
-- **Buildings buffer**: forbid installation around buildings
-- **Residential / protected areas**: exclude protected zones
-- **Electrical stations**: optional keep-away constraint
-- **Slope**: forbid terrain that exceeds a max slope threshold
-- **Airport visibility**: ensure LOS constraints to airport if required
-
-**Mask modules** (names may vary depending on the branch/version):
-
-- `site_location_masks.py` (base/orchestration)
-- `buildings_masks.py` / `buildings.py`
-- `roads_masks.py`
-- `protected_areas_masks.py`
-- `electrical_stations_masks.py`
-- `mask_slope.py`
-
-**Candidate generation scripts:**
-
-- `generate_candidates_full_constraints.py`
-- `generate_candidates_relaxed.py`
-- `generate_candidates_no_residential.py`
-
-**Outputs** typically saved as NPZ:
-
-- `authorized_points_all_masks.npz` containing arrays `lat`, `lon`
+- `generate_candidates_full_constraints.py` — Apply all constraints → saves `authorized_points_all_masks.npz`
+- `generate_candidates_no_residential.py` — Relax the residential constraint → saves `authorized_points_no_res.npz`
 
 ---
 
-## Scoring & Ranking Candidates (Numba ENU)
+## Stage 3 — Scoring & Ranking
 
-The scoring stage:
+### What it does
 
-1. Loads terrain once
-2. For each candidate site, computes coverage % at each FL
-3. Aggregates with weights, and sorts candidates by score
+Run the Stage 1 coverage analysis on **every candidate location** and rank them by a weighted coverage score.
 
-**Main scripts:**
+### Scoring method
 
-- `score_numba_enu.py`
-- `run_scoring_numba_enu.py`
+For each candidate, the coverage percentage is computed at each of the 8 flight levels. These are then combined into a single score using a **weighted sum** — lower flight levels (FL5, FL10, FL20) receive higher weights, because low-altitude coverage is harder to achieve over mountainous terrain and is operationally more critical.
 
-**Typical output:**
+### Key files
 
-- `scored_candidates_fullgrid.npz` with:
-  - `lat`, `lon`
-  - `score`
-  - `cov_by_fl`
+| File | Role |
+|---|---|
+| `score_numba_enu.py` | Numba scoring engine — runs full-grid LOS for one candidate, returns weighted score and per-FL coverage |
+| `run_scoring_numba_enu.py` | **Standalone script**: loads candidates NPZ, scores all of them, saves ranked results to `scored_candidates_fullgrid_enu.npz` |
 
----
+### Output format
 
-## 9) Visualization
-
-**Coverage plotting:**
-
-- `visualize_coverage.py`
-- `plot_coverage_map(...)`
-- `plot_all_coverage_maps(...)`
-
-**Terrain plotting:**
-
-- `visualize_terrain.py`
-
-**Optional basemap tiles:**
-
-- `contextily` (if enabled)
+The output NPZ contains, for each candidate:
+- `lat`, `lon` — location
+- `score` — weighted aggregate score
+- `cov_by_fl` — coverage % at each of the 8 flight levels
 
 ---
 
-## Google Earth Export (KML/KMZ)
+## Streamlit App
 
-Exports are handled by:
+`streamlit run radar_coverage_app.py` opens a 3-page web UI, one page per stage:
 
-- `export_kml.py`
-- `export_scored_points_weighted_kml.py`
-- Related `export_*_kml.py` utilities
+**Page 1 — Coverage Analysis**
+Load a terrain file, set radar position and height, compute coverage maps for all flight levels, visualize results, export to KMZ (Google Earth).
+
+**Page 2 — Site Selection**
+Configure each constraint (distance thresholds, GeoJSON uploads), apply masks interactively, visualize the combined candidate map, export candidate locations.
+
+**Page 3 — Scoring Results**
+Load a candidate NPZ, run the scoring, view the ranked table with per-FL breakdown, export top sites as KMZ.
 
 ---
 
-## Project Structure
-```text
+## Repository Structure
+
+```
 modelling_radar_thales/
-├── radar_coverage_app.py
-├── radar_coverage_cli.py
-├── main_coverage.py
-├── coverage_analysis.py
-├── coverage_analysis_fast.py
-├── LOS.py
-├── LOS_np.py
-├── LOS_numba_enu.py
-├── FLs_numba_enu.py
-├── score_numba_enu.py
-├── run_scoring_numba_enu.py
-├── geo_utils.py
-├── geo_utils_earth_curvature.py
-├── visualize_terrain.py
-├── visualize_coverage.py
-├── export_kml.py
-├── export_*_kml.py
-├── mask_*.py
-├── generate_candidates_*.py
-├── requirements.txt
-├── terrain_mat.npz
-└── geographical_data/
-    ├── buildings.geojson
-    ├── roads_nice_50km.geojson
-    ├── protected_areas.geojson
-    └── export.geojson
+│
+├── radar_coverage_app.py                  # Streamlit app entry point + shared utilities
+├── pages/
+│   ├── 1_Coverage_Analysis.py             # App page 1
+│   ├── 2_Site_Selection.py                # App page 2
+│   └── 3_Scoring_Results.py               # App page 3
+│
+├── # ── Stage 1: Coverage (Numba) ──────────────────────────
+├── LOS_numba_enu.py                        # Numba LOS kernel
+├── FLs_numba_enu.py                        # Full-grid coverage for one FL
+├── geo_utils_earth_curvature.py            # Lat/lon → ENU + curvature correction
+├── geo_utils.py                            # Base coordinate utilities
+├── main_coverage.py                        # Standalone: run all FLs, export KMZ
+│
+├── # ── Stage 2: Masks ─────────────────────────────────────
+├── mask_site_location.py                   # Land boundary, radius, French territory
+├── mask_slope.py                           # Slope threshold
+├── mask_roads.py                           # Road proximity
+├── mask_buildings.py                       # Building exclusion buffer
+├── mask_residential.py                     # Residential area exclusion
+├── mask_protected_areas.py                 # Protected areas exclusion
+├── mask_electric_stations.py               # Electrical station proximity
+├── mask_see_airport.py                     # Airport LOS constraint
+├── generate_candidates_full_constraints.py # Standalone: all masks → candidates NPZ
+├── generate_candidates_no_residential.py   # Standalone: relax residential constraint
+│
+├── # ── Stage 3: Scoring ───────────────────────────────────
+├── score_numba_enu.py                      # Numba scoring engine
+├── run_scoring_numba_enu.py                # Standalone: score all candidates, rank
+│
+├── # ── Export ─────────────────────────────────────────────
+├── export_kml.py                           # Coverage maps → KMZ
+├── export_site_location_masks_kml.py       # Masks → KMZ
+├── export_scored_points_weighted_kml.py    # Scored candidates → KMZ
+├── export_authorized_points_kml.py         # Candidate points → KMZ
+├── export_protected_areas_mask_kml.py      # Protected areas mask → KMZ
+├── export_slope_mask_kml.py                # Slope mask → KMZ
+│
+├── # ── Visualization (standalone scripts) ─────────────────
+├── visualize_coverage.py                   # Coverage map plots (used by main_coverage.py)
+├── visualize_terrain.py                    # Terrain 2D/3D plots
+├── visualize_site_location_masks.py        # Mask overlay plots
+├── visualize_authorized_points_kml.py      # Candidate points visualization
+├── buildings_png.py                        # Standalone buildings map render
+├── elecstations.py                         # Standalone electrical stations render
+├── roads_png.py                            # Standalone roads map render
+├── terrain_roads.py                        # Standalone terrain + roads render
+│
+├── # ── Data ────────────────────────────────────────────────
+├── terrain_mat.npz                         # Terrain elevation grid (provided by Thales)
+├── terrain_req01_50km.npz                  # Terrain grid at 50km resolution
+├── authorized_points_all_masks.npz         # Pre-computed candidates (all constraints)
+├── authorized_points_no_res.npz            # Pre-computed candidates (no residential)
+│
+├── geographical_data/
+│   ├── buildings.geojson                   # OSM buildings (Overpass Turbo)
+│   ├── roads_nice_50km.geojson             # OSM road network (Overpass Turbo)
+│   ├── protected_areas.geojson             # OSM protected areas (Overpass Turbo)
+│   └── export.geojson                      # Study area boundary
+│
+└── requirements.txt
 ```
+
+---
+
+## Terrain Data Format
+
+The terrain NPZ file must contain:
+
+| Key | Type | Description |
+|---|---|---|
+| `lat` | 1D array | Latitudes in degrees (WGS84) |
+| `lon` | 1D array | Longitudes in degrees (WGS84) |
+| `ter` | 2D array `(len(lat), len(lon))` | Elevation in meters above sea level |
+
+---
+
+## Requirements
+
+```
+numpy, matplotlib, streamlit     # core
+numba                            # required — LOS performance
+shapely, pyproj                  # geospatial operations
+contextily                       # optional — basemap tiles
+plotly, scipy, pillow            # additional utilities
+```
+
+Install: `pip install -r requirements.txt`
 
 ---
 
 ## Troubleshooting
 
-### First run is slow
+**First run is slow**
+Numba compiles the LOS kernel on first execution. Run once, then rerun — subsequent runs are significantly faster.
 
-Numba compiles on the first execution. Run once, then rerun → much faster.
-
-### Coverage changes when changing grid size
-
-Changing resolution changes the evaluated target points. For fair comparisons:
-
-- Keep the same grid/subset
-- Same radar height
-- Same `n_samples`
-- Same coordinate reference (ENU) and terrain normalization
-
-### Lat/Lon decreasing issues
-
-Some datasets store axes descending. Use normalization utilities to avoid `searchsorted` and plotting inconsistencies.
-
----
-
-## Notes
-- Large datasets (terrain/GeoJSON/KMZ) can make the repository heavy. If you want a lightweight version for sharing, keep small sample files in the repo and host the full datasets elsewhere.
+**Coverage changes with grid resolution**
+Changing the terrain grid resolution changes which target points are evaluated. For reproducible comparisons, always use the same terrain file, radar height, number of ray samples, and coordinate reference.
