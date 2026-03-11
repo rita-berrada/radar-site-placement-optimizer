@@ -12,28 +12,40 @@ This project was developed as part of a mission for **Thales**. It is structured
 
 ```mermaid
 flowchart TD
-    T1[/"terrain_mat.npz — provided by Thales"/]
-    T2[/"geographical_data/ — OpenStreetMap via Overpass Turbo"/]
+    T1([terrain_mat.npz — provided by Thales])
+    T2([geographical_data/ — OpenStreetMap via Overpass Turbo])
 
     T1 --> S1
-    subgraph S1["Stage 1 — Coverage Analysis"]
-        A["Given radar lat/lon/height, compute LOS coverage at 8 flight levels\nLOS_numba_enu.py · FLs_numba_enu.py · geo_utils_earth_curvature.py"]
-    end
-
     T1 --> S2
     T2 --> S2
-    subgraph S2["Stage 2 — Site Selection"]
-        B["Apply constraint masks → boolean grid of valid placement locations\nmask_*.py · generate_candidates_*.py"]
-    end
 
-    S2 --> C1[/"authorized_points_all_masks.npz"/]
+    S2 --> C1([authorized_points_all_masks.npz])
     C1 --> S3
     T1 --> S3
-    subgraph S3["Stage 3 — Scoring"]
-        C["Run Stage 1 on every candidate, aggregate with FL weights → ranked list\nscore_numba_enu.py · run_scoring_numba_enu.py"]
-    end
 
-    S3 --> OUT[/"scored_candidates_fullgrid_enu.npz — lat, lon, score, cov_by_fl"/]
+    S3 --> OUT([scored_candidates_fullgrid_enu.npz])
+
+    S1["**Stage 1 — Coverage Analysis**
+    Given a radar position, compute LOS coverage
+    at 8 flight levels using Numba
+    ─────────────────────────────
+    LOS_numba_enu.py
+    FLs_numba_enu.py
+    geo_utils_earth_curvature.py"]
+
+    S2["**Stage 2 — Site Selection**
+    Apply geographic and physical constraints
+    to produce a boolean grid of valid sites
+    ─────────────────────────────
+    mask_*.py
+    generate_candidates_*.py"]
+
+    S3["**Stage 3 — Scoring**
+    Run Stage 1 on every candidate location
+    and rank by weighted FL coverage score
+    ─────────────────────────────
+    score_numba_enu.py
+    run_scoring_numba_enu.py"]
 ```
 
 ---
@@ -196,49 +208,43 @@ modelling_radar_thales/
 │   ├── 2_Site_Selection.py                # App page 2
 │   └── 3_Scoring_Results.py               # App page 3
 │
-├── # ── Stage 1: Coverage (Numba) ──────────────────────────
-├── LOS_numba_enu.py                        # Numba LOS kernel
-├── FLs_numba_enu.py                        # Full-grid coverage for one FL
-├── geo_utils_earth_curvature.py            # Lat/lon → ENU + curvature correction
-├── geo_utils.py                            # Base coordinate utilities
-├── main_coverage.py                        # Standalone: run all FLs, export KMZ
+├── LOS_numba_enu.py                        # Stage 1 — Numba LOS kernel
+├── FLs_numba_enu.py                        # Stage 1 — Full-grid coverage for one FL
+├── geo_utils_earth_curvature.py            # Stage 1 — Lat/lon → ENU + curvature correction
+├── geo_utils.py                            # Stage 1 — Base coordinate utilities
+├── main_coverage.py                        # Stage 1 — Run all FLs, export KMZ
 │
-├── # ── Stage 2: Masks ─────────────────────────────────────
-├── mask_site_location.py                   # Land boundary, radius, French territory
-├── mask_slope.py                           # Slope threshold
-├── mask_roads.py                           # Road proximity
-├── mask_buildings.py                       # Building exclusion buffer
-├── mask_residential.py                     # Residential area exclusion
-├── mask_protected_areas.py                 # Protected areas exclusion
-├── mask_electric_stations.py               # Electrical station proximity
-├── mask_see_airport.py                     # Airport LOS constraint
-├── generate_candidates_full_constraints.py # Standalone: all masks → candidates NPZ
-├── generate_candidates_no_residential.py   # Standalone: relax residential constraint
+├── mask_site_location.py                   # Stage 2 — Land boundary, radius, French territory
+├── mask_slope.py                           # Stage 2 — Slope threshold
+├── mask_roads.py                           # Stage 2 — Road proximity
+├── mask_buildings.py                       # Stage 2 — Building exclusion buffer
+├── mask_residential.py                     # Stage 2 — Residential area exclusion
+├── mask_protected_areas.py                 # Stage 2 — Protected areas exclusion
+├── mask_electric_stations.py               # Stage 2 — Electrical station proximity
+├── mask_see_airport.py                     # Stage 2 — Airport LOS constraint
+├── generate_candidates_full_constraints.py # Stage 2 — All masks → candidates NPZ
+├── generate_candidates_no_residential.py   # Stage 2 — Relax residential constraint
 │
-├── # ── Stage 3: Scoring ───────────────────────────────────
-├── score_numba_enu.py                      # Numba scoring engine
-├── run_scoring_numba_enu.py                # Standalone: score all candidates, rank
+├── score_numba_enu.py                      # Stage 3 — Numba scoring engine
+├── run_scoring_numba_enu.py                # Stage 3 — Score all candidates, rank
 │
-├── # ── Export ─────────────────────────────────────────────
-├── export_kml.py                           # Coverage maps → KMZ
-├── export_site_location_masks_kml.py       # Masks → KMZ
-├── export_scored_points_weighted_kml.py    # Scored candidates → KMZ
-├── export_authorized_points_kml.py         # Candidate points → KMZ
-├── export_protected_areas_mask_kml.py      # Protected areas mask → KMZ
-├── export_slope_mask_kml.py                # Slope mask → KMZ
+├── export_kml.py                           # Export — Coverage maps → KMZ
+├── export_site_location_masks_kml.py       # Export — Masks → KMZ
+├── export_scored_points_weighted_kml.py    # Export — Scored candidates → KMZ
+├── export_authorized_points_kml.py         # Export — Candidate points → KMZ
+├── export_protected_areas_mask_kml.py      # Export — Protected areas mask → KMZ
+├── export_slope_mask_kml.py                # Export — Slope mask → KMZ
 │
-├── # ── Visualization (standalone scripts) ─────────────────
-├── visualize_coverage.py                   # Coverage map plots (used by main_coverage.py)
-├── visualize_terrain.py                    # Terrain 2D/3D plots
-├── visualize_site_location_masks.py        # Mask overlay plots
-├── visualize_authorized_points_kml.py      # Candidate points visualization
-├── buildings_png.py                        # Standalone buildings map render
-├── elecstations.py                         # Standalone electrical stations render
-├── roads_png.py                            # Standalone roads map render
-├── terrain_roads.py                        # Standalone terrain + roads render
+├── visualize_coverage.py                   # Visualization — Coverage map plots
+├── visualize_terrain.py                    # Visualization — Terrain 2D/3D plots
+├── visualize_site_location_masks.py        # Visualization — Mask overlay plots
+├── visualize_authorized_points_kml.py      # Visualization — Candidate points
+├── buildings_png.py                        # Visualization — Buildings map render
+├── elecstations.py                         # Visualization — Electrical stations render
+├── roads_png.py                            # Visualization — Roads map render
+├── terrain_roads.py                        # Visualization — Terrain + roads render
 │
-├── # ── Data ────────────────────────────────────────────────
-├── terrain_mat.npz                         # Terrain elevation grid (provided by Thales)
+├── terrain_mat.npz                         # Data — Terrain elevation grid (provided by Thales)
 ├── terrain_req01_50km.npz                  # Terrain grid at 50km resolution
 ├── authorized_points_all_masks.npz         # Pre-computed candidates (all constraints)
 ├── authorized_points_no_res.npz            # Pre-computed candidates (no residential)
